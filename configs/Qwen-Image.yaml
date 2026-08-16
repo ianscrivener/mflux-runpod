@@ -1,7 +1,6 @@
 model_object: QwenImage
 model_config: qwen_image
 quants:
-  - q3
   - q4
   - q6
   - q8
