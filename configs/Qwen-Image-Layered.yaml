@@ -1,0 +1,12 @@
+model_object: QwenImage
+model_config: qwen_image_layered
+quants:
+  - q3
+  - q4
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Qwen-Image Layered
+  description: MFlux quantized builds of Qwen-Image Layered
+  version: 1.0.0

@@ -1,0 +1,13 @@
+[project]
+name = "workspace"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "hf>=1.27.0",
+    "mflux",
+]
+
+[tool.uv.sources]
+mflux = { git = "https://github.com/mflux-community/mflux.git" }

@@ -1,0 +1,11 @@
+model_object: FIBO
+model_config: fibo
+quants:
+  - q4
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Fibo
+  description: MFlux quantized builds of Fibo
+  version: 1.0.0

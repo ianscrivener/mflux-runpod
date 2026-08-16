@@ -1,0 +1,8 @@
+model_object: Flux2Klein
+model_config: flux2_klein_9b_kv
+quants:
+  - bf16
+collection:
+  name: Flux.2 Klein 9B KV
+  description: MFlux quantized builds of Flux.2 Klein 9B KV
+  version: 1.0.0

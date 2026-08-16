@@ -1,0 +1,10 @@
+model_object: ZImage
+model_config: z_image
+quants:
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Z-Image Base
+  description: MFlux quantized builds of Z-Image Base
+  version: 1.0.0

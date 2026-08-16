@@ -1,0 +1,11 @@
+model_object: FIBO
+model_config: fibo_edit_rmbg
+quants:
+  - q4
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Fibo-Edit-RMBG
+  description: MFlux quantized builds of Fibo-Edit-RMBG
+  version: 1.0

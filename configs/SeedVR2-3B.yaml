@@ -1,0 +1,10 @@
+model_object: SeedVR2
+model_config: seedvr2_3b
+quants:
+  - q4
+  - q6
+  - q8
+collection:
+  name: SeedVR2 3B
+  description: MFlux quantized builds of SeedVR2 3B
+  version: 1.0.0
