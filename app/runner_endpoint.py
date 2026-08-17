@@ -3,6 +3,23 @@
 Wraps app/runner.py's build_and_upload_one_quant() as a Flash serverless
 endpoint on CUDA 13, matching the mflux/mlx CUDA-13 preference.
 
+Two SEPARATE Endpoints are defined here, each with exactly one function.
+Flash's deployed-handler generator wires up only functions[0] of a resource
+(confirmed by reading runpod_flash's handler_generator.py + a real
+`flash build` manifest: two @runner-decorated functions on one Endpoint
+silently produced a handler for only the first one, dropping the second
+entirely) -- so run_generation and health_check cannot share one Endpoint
+without one becoming unreachable:
+  - runner / run_generation: the real build+upload job (see below).
+  - runner_health / health_check: a cheap post-deploy smoke test -- imports
+    mlx/mflux and reports the CUDA device without running a full model
+    build. Same gpu/dependencies/env as `runner`, so its result is a
+    faithful proxy for whether run_generation would get past its import
+    step. Dispatch after `flash deploy` (e.g. scripts/check_runner_health.py
+    in CI) to catch environment-level breakage (missing CUDA runtime libs, a
+    bad HF_TOKEN secret reference) in seconds instead of discovering it
+    after a multi-minute build fails.
+
 One GPU job = one quant (decided with the user, 2026-08-17: better crash
 isolation and retry granularity than batching a whole series into one job,
 and mflux quant builds are minutes-long so per-job cold start is negligible
@@ -20,7 +37,10 @@ this module (importing app.runner_endpoint does not create or call anything).
 
 Per the Flash skill's Gotcha #1 (only the function body ships to `flash dev`
 workers — module-level imports/constants are NOT included), every import and
-constant the handler needs is defined *inside* run_generation().
+constant each handler needs is defined *inside* that handler's own body
+(run_generation and health_check each self-contained, deliberately
+duplicating the small pip-install/CDLL-preload block rather than sharing a
+module-level helper).
 
 SECURITY: HF_TOKEN and the Orchestrator's callback base URL are both
 deployment-scoped config (Endpoint env=), not request parameters:
@@ -40,11 +60,13 @@ deploying — see runpod.yaml's runner.env block.
 
 from runpod_flash import CudaVersion, Endpoint, GpuGroup
 
-runner = Endpoint(
-    name="mflux-runner",
+# Shared by both Endpoints below so the health check's environment matches
+# run_generation's exactly (same base image implied by gpu/min_cuda_version,
+# same pip/apt deps, same secrets) -- otherwise a green health check
+# wouldn't actually prove anything about the real job's environment.
+_COMMON_KWARGS = dict(
     gpu=GpuGroup.ADA_24,  # RTX 4090 tier; matches runpod.yaml's gpu_type_std
     min_cuda_version=CudaVersion.V13_0,  # mflux/mlx has a hard CUDA 13 preference
-    workers=(0, 1),  # one at a time while testing; raise once the pipeline is proven
     idle_timeout=60,
     dependencies=[
         "huggingface_hub",
@@ -76,6 +98,20 @@ runner = Endpoint(
         # Set at deploy time (flash env / RunPod console), not per-request:
         # "ORCHESTRATOR_BASE_URL": "https://<orchestrator-endpoint>",
     },
+)
+
+runner = Endpoint(
+    name="mflux-runner",
+    workers=(0, 1),  # one at a time while testing; raise once the pipeline is proven
+    **_COMMON_KWARGS,
+)
+
+# Separate Endpoint (own worker pool) so it can't ever displace
+# run_generation as functions[0] of a shared resource -- see module docstring.
+runner_health = Endpoint(
+    name="mflux-runner-health",
+    workers=(0, 1),
+    **_COMMON_KWARGS,
 )
 
 
@@ -147,21 +183,37 @@ async def run_generation(
         # wheels (site-packages/nvidia/*/lib/*.so), but nothing adds that
         # directory to the dynamic linker's search path -- mlx's compiled
         # extension fails to dlopen them (e.g. "libcublasLt.so.13: cannot open
-        # shared object file") unless LD_LIBRARY_PATH points at them first.
-        # Must happen before `from app.runner import ...` pulls in mflux/mlx.
+        # shared object file"). Setting LD_LIBRARY_PATH here does NOT help:
+        # glibc's loader reads it once at process startup and caches the
+        # result, so mutating os.environ mid-process is invisible to dlopen
+        # calls in *this* process (it would only affect child processes).
+        # Instead, preload each .so by absolute path with RTLD_GLOBAL before
+        # mlx is imported -- that registers them by soname so mlx's own
+        # dlopen (for e.g. libcublasLt.so.13) resolves against the
+        # already-loaded object instead of searching the link path at all.
+        import ctypes
         import glob
         import site
 
         site_dirs = [*site.getsitepackages(), site.getusersitepackages()]
-        nvidia_lib_dirs = [
-            d
+        nvidia_libs = [
+            so
             for site_dir in site_dirs
-            for d in glob.glob(os.path.join(site_dir, "nvidia", "*", "lib"))
+            for so in glob.glob(os.path.join(site_dir, "nvidia", "*", "lib", "*.so*"))
         ]
-        if nvidia_lib_dirs:
-            os.environ["LD_LIBRARY_PATH"] = ":".join(
-                nvidia_lib_dirs + [os.environ.get("LD_LIBRARY_PATH", "")]
-            )
+        # Load order matters for interdependent libs; retry failures once
+        # after the first pass has resolved whatever they depended on.
+        remaining = nvidia_libs
+        for _ in range(2):
+            still_failing = []
+            for so in remaining:
+                try:
+                    ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    still_failing.append(so)
+            remaining = still_failing
+            if not remaining:
+                break
 
         from app.runner import build_and_upload_one_quant
 
@@ -227,3 +279,82 @@ async def run_generation(
         "callback_delivered": callback_delivered,
         "callback_error": callback_error,
     }
+
+
+@runner_health
+async def health_check(**_kwargs) -> dict:
+    """Cheap post-deploy smoke test: proves this worker's environment can
+    actually import mlx/mflux and see a CUDA-13 device, without running a
+    multi-minute model build. Same Endpoint/worker pool/dependencies/env as
+    run_generation, so a healthy response here is a faithful proxy for
+    whether a real generation job would get past its import step.
+
+    Dispatch after `flash deploy` (e.g. in CI) and fail the pipeline if
+    status != "ok" — this is what would have caught the
+    "libcublasLt.so.13: cannot open shared object file" failure without
+    burning a full quant build to find it.
+
+    Takes **_kwargs (ignored) because RunPod's queue worker SDK rejects a
+    request with an empty `input` dict, so callers must send at least one
+    key even though this check needs no parameters.
+    """
+    import ctypes
+    import glob
+    import os
+    import site
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    started = time.monotonic()
+    try:
+        _mflux_marker = Path("/tmp/.mflux_runner_deps_installed")
+        if not _mflux_marker.exists():
+            subprocess.run(
+                [
+                    sys.executable, "-m", "pip", "install", "--quiet",
+                    "mlx[cuda13]>=0.30.3,<0.32.0",
+                    "mflux @ git+https://github.com/mflux-community/mflux.git",
+                ],
+                check=True,
+            )
+            _mflux_marker.touch()
+
+        site_dirs = [*site.getsitepackages(), site.getusersitepackages()]
+        nvidia_libs = [
+            so
+            for site_dir in site_dirs
+            for so in glob.glob(os.path.join(site_dir, "nvidia", "*", "lib", "*.so*"))
+        ]
+        remaining = nvidia_libs
+        for _ in range(2):
+            still_failing = []
+            for so in remaining:
+                try:
+                    ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    still_failing.append(so)
+            remaining = still_failing
+            if not remaining:
+                break
+
+        import mlx.core as mx
+
+        device = str(mx.default_device())
+        hf_token_configured = os.environ.get("HF_TOKEN", "").startswith("hf_")
+
+        return {
+            "status": "ok",
+            "mlx_device": device,
+            "hf_token_configured": hf_token_configured,
+            "nvidia_libs_loaded": len(nvidia_libs) - len(remaining),
+            "nvidia_libs_failed": remaining,
+            "duration_s": time.monotonic() - started,
+        }
+    except Exception as exc:  # noqa: BLE001 - report failure, don't crash the job
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "duration_s": time.monotonic() - started,
+        }
