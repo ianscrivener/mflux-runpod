@@ -1,9 +1,150 @@
 {
   "version": "1.0",
   "python_version": "3.12",
-  "generated_at": "2026-08-17T04:47:00.705112Z",
+  "generated_at": "2026-08-17T07:33:04.514967Z",
   "project_name": "mflux-runpod",
-  "resources": {},
-  "function_registry": {},
-  "source_fingerprint": "79d0fa0a56db94015dd0d9cfa5a11d8df099cbe065b62bcedc9d97ce8fd676cd"
+  "resources": {
+    "mflux-runner": {
+      "resource_type": "LiveServerless",
+      "file_path": "app/runner_endpoint.py",
+      "local_path_prefix": "/app/runner_endpoint",
+      "module_path": "app.runner_endpoint",
+      "functions": [
+        {
+          "name": "run_generation",
+          "module": "app.runner_endpoint",
+          "is_async": true,
+          "is_class": false
+        }
+      ],
+      "is_load_balanced": false,
+      "is_live_resource": true,
+      "config_variable": "runner",
+      "makes_remote_calls": false,
+      "imageName": "runpod/flash:py3.12-latest",
+      "gpuIds": "ADA_24",
+      "workersMin": 0,
+      "workersMax": 1,
+      "idleTimeout": 60,
+      "scalerType": "QUEUE_DELAY",
+      "scalerValue": 4,
+      "locations": "US-CA-2,US-IL-1,US-KS-2,US-MO-1,US-MO-2,US-NC-2,US-NE-1,US-WA-1,EU-CZ-1,EU-RO-1,EUR-NO-1",
+      "minCudaVersion": "13.0",
+      "env": {
+        "HF_XET_HIGH_PERFORMANCE": "1",
+        "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",
+        "_FLASH_SOURCE_FINGERPRINT": "833499504b7e0bc62eec473892bd62f3405cec6c3d13f40b43630279c250e285"
+      },
+      "template": {
+        "containerDiskInGb": 64,
+        "dockerArgs": "",
+        "startScript": "",
+        "advancedStart": false,
+        "containerRegistryAuthId": ""
+      },
+      "handler_file": "handler_mflux-runner.py",
+      "target_python_version": "3.12",
+      "endpoint_id": "zzbom98otqyfav"
+    },
+    "mflux-runner-health": {
+      "resource_type": "LiveServerless",
+      "file_path": "app/runner_endpoint.py",
+      "local_path_prefix": "/app/runner_endpoint",
+      "module_path": "app.runner_endpoint",
+      "functions": [
+        {
+          "name": "health_check",
+          "module": "app.runner_endpoint",
+          "is_async": true,
+          "is_class": false
+        }
+      ],
+      "is_load_balanced": false,
+      "is_live_resource": true,
+      "config_variable": "runner_health",
+      "makes_remote_calls": false,
+      "imageName": "runpod/flash:py3.12-latest",
+      "gpuIds": "ADA_24",
+      "workersMin": 0,
+      "workersMax": 1,
+      "idleTimeout": 60,
+      "scalerType": "QUEUE_DELAY",
+      "scalerValue": 4,
+      "locations": "US-CA-2,US-IL-1,US-KS-2,US-MO-1,US-MO-2,US-NC-2,US-NE-1,US-WA-1,EU-CZ-1,EU-RO-1,EUR-NO-1",
+      "minCudaVersion": "13.0",
+      "env": {
+        "HF_XET_HIGH_PERFORMANCE": "1",
+        "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",
+        "_FLASH_SOURCE_FINGERPRINT": "833499504b7e0bc62eec473892bd62f3405cec6c3d13f40b43630279c250e285"
+      },
+      "template": {
+        "containerDiskInGb": 64,
+        "dockerArgs": "",
+        "startScript": "",
+        "advancedStart": false,
+        "containerRegistryAuthId": ""
+      },
+      "handler_file": "handler_mflux-runner-health.py",
+      "target_python_version": "3.12",
+      "endpoint_id": "1o3j0hq5ngog4n"
+    },
+    "mflux-volume-probe": {
+      "resource_type": "CpuLiveServerless",
+      "file_path": "app/_volume_probe.py",
+      "local_path_prefix": "/app/_volume_probe",
+      "module_path": "app._volume_probe",
+      "functions": [
+        {
+          "name": "check",
+          "module": "app._volume_probe",
+          "is_async": true,
+          "is_class": false
+        }
+      ],
+      "is_load_balanced": false,
+      "is_live_resource": true,
+      "config_variable": "probe",
+      "makes_remote_calls": false,
+      "imageName": "runpod/flash-cpu:py3.12-latest",
+      "instanceIds": [
+        "cpu3c-1-2"
+      ],
+      "workersMin": 0,
+      "workersMax": 1,
+      "idleTimeout": 60,
+      "scalerType": "QUEUE_DELAY",
+      "scalerValue": 4,
+      "networkVolumes": [
+        {
+          "name": "mflux-probe-vol",
+          "size": 10,
+          "dataCenterId": "EU-RO-1"
+        }
+      ],
+      "template": {
+        "containerDiskInGb": 10,
+        "dockerArgs": "",
+        "startScript": "",
+        "advancedStart": false,
+        "containerRegistryAuthId": ""
+      },
+      "handler_file": "handler_mflux-volume-probe.py",
+      "target_python_version": "3.12",
+      "env": {
+        "_FLASH_SOURCE_FINGERPRINT": "833499504b7e0bc62eec473892bd62f3405cec6c3d13f40b43630279c250e285"
+      },
+      "endpoint_id": "43bi9qb1lztjio"
+    }
+  },
+  "function_registry": {
+    "run_generation": "mflux-runner",
+    "health_check": "mflux-runner-health",
+    "check": "mflux-volume-probe"
+  },
+  "source_fingerprint": "833499504b7e0bc62eec473892bd62f3405cec6c3d13f40b43630279c250e285",
+  "resources_endpoints": {
+    "mflux-runner": "https://api.runpod.ai/v2/zzbom98otqyfav",
+    "mflux-runner-health": "https://api.runpod.ai/v2/1o3j0hq5ngog4n",
+    "mflux-volume-probe": "https://api.runpod.ai/v2/43bi9qb1lztjio"
+  }
 }
