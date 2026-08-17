@@ -38,8 +38,18 @@ CREATE TABLE IF NOT EXISTS quant_builds (
     hf_repo_id          TEXT
 );
 
+CREATE TABLE IF NOT EXISTS series_volumes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_series        TEXT NOT NULL,
+    volume_id           TEXT NOT NULL,
+    volume_name         TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    deleted_at          TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_quant_builds_run_id ON quant_builds(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model_series ON runs(model_series);
+CREATE INDEX IF NOT EXISTS idx_series_volumes_model_series ON series_volumes(model_series);
 """
 
 

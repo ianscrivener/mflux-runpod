@@ -256,7 +256,11 @@ async def run_generation(
         for attempt in range(3):
             try:
                 with httpx.Client(timeout=30.0) as client:
-                    response = client.post(url, json=payload)
+                    # Flash's load-balanced routes take the handler's arg
+                    # wrapped in {"data": ...} at the top level, not the raw
+                    # body -- confirmed live against orchestrator_endpoint.py's
+                    # report_run_callback(run_id, data: dict).
+                    response = client.post(url, json={"data": payload})
                     response.raise_for_status()
                 callback_delivered = True
                 break

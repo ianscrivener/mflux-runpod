@@ -6,11 +6,25 @@ call, so this stays a thin transport layer rather than a second copy of the
 Orchestrator's logic.
 
 REPORT_DB_PATH must point at a mounted NetworkVolume path, not local
-container disk -- verified live (2026-08-17, via a throwaway probe endpoint,
-since removed) that `volume=NetworkVolume(...)` on a Flash Endpoint mounts at
-/runpod-volume (a shared network filesystem, confirmed writable). Without
-this, SQLite data would vanish every time this endpoint's worker idles out
-and scales to zero (idle_timeout=60s here).
+container disk -- verified live (2026-08-17) that `volume=NetworkVolume(...)`
+on a Flash Endpoint mounts at /runpod-volume, AND that data written there
+survives a worker scaling to zero (idle_timeout=60s): a run row written at
+08:11 UTC was still readable an hour later, across multiple worker restarts
+and a full redeploy in between.
+
+Uses `mflux-global-s3` -- the persistent volume created by hand in the RunPod
+console (has RunPod's "Global Networking" + S3-compatible API support) --
+rather than letting Flash auto-create a volume, so this Orchestrator's
+storage is the one, deliberately-provisioned volume, not a Flash-managed one
+that could get recreated under a different id on some future deploy.
+
+Network volumes are datacenter-pinned on RunPod, not truly cross-region (
+confirmed against runpod_flash's own NetworkVolume/serverless resource code
+and RunPod's docs, 2026-08-17) -- "Global Networking" is a per-datacenter
+capability flag enabling the S3-compatible HTTP API, not a volume reachable
+natively from every region. US-IL-1 was chosen because it has that flag;
+every Endpoint in this project (this one, mflux-runner, mflux-runner-health)
+is pinned to the same datacenter so all three can actually mount it.
 
 Per the Flash skill's Gotcha #1 (only the function body ships to `flash dev`
 workers), every import each route needs is defined inside that route's own
@@ -21,15 +35,18 @@ it (`flash deploy`) or running it against `flash dev` provisions/uses real,
 billed RunPod CPU workers + a network volume. Do that deliberately.
 """
 
-from runpod_flash import CpuInstanceType, Endpoint, NetworkVolume
+from runpod_flash import CpuInstanceType, DataCenter, Endpoint, NetworkVolume
+
+ORCHESTRATOR_DATACENTER = DataCenter.US_IL_1
 
 orchestrator = Endpoint(
     name="mflux-orchestrator",
     cpu=CpuInstanceType.CPU3C_1_2,
     workers=(0, 1),
     idle_timeout=60,
+    datacenter=ORCHESTRATOR_DATACENTER,
     dependencies=["pyyaml", "httpx"],
-    volume=NetworkVolume(name="mflux-orchestrator-reports", size=10),
+    volume=NetworkVolume(name="mflux-global-s3", datacenter=ORCHESTRATOR_DATACENTER, size=10),
     env={
         "REPORT_DB_PATH": "/runpod-volume/reports.sqlite",
         # RunPod Secret, injected at runtime -- see app/runner_endpoint.py's
