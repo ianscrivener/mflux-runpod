@@ -23,7 +23,7 @@ POLL_INTERVAL_S = 5
 POLL_TIMEOUT_S = 300
 
 
-def _request(method: str, url: str, api_key: str, body: dict | None = None) -> dict:
+def _request(method: str, url: str, api_key: str, body: dict | None = None) -> dict | list:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", f"Bearer {api_key}")
@@ -37,7 +37,9 @@ def _request(method: str, url: str, api_key: str, body: dict | None = None) -> d
 
 def find_endpoint_id(api_key: str) -> str:
     data = _request("GET", f"{RUNPOD_API_BASE}/endpoints", api_key)
-    for ep in data.get("items", data if isinstance(data, list) else []):
+    # /v1/endpoints returns a bare JSON list, not {"items": [...]}.
+    endpoints = data if isinstance(data, list) else data.get("items", [])
+    for ep in endpoints:
         if ep.get("name") == ENDPOINT_NAME:
             return ep["id"]
     raise SystemExit(f"No deployed endpoint named {ENDPOINT_NAME!r} found")
