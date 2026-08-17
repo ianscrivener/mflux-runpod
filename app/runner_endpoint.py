@@ -48,7 +48,17 @@ runner = Endpoint(
         "huggingface_hub",
         "pyyaml",
         "httpx",
-        "mlx[cuda13]",
+        # mflux-community/mflux's pyproject.toml pins "mlx[cuda13]>=0.30.3,<0.32.0"
+        # for Linux, but the only mlx-cuda-13 release published on PyPI is 0.32.0 --
+        # outside that range, so a plain `pip install mflux` fails to resolve on
+        # Linux entirely (verified against a real ubuntu-latest GitHub Actions
+        # runner, not just locally). mflux's own code comment says mlx <0.32.0 has
+        # a known quantized_matmul correctness bug and their macOS pin already
+        # requires >=0.32.0 -- the Linux pin is a stale copy-paste that excludes
+        # the only (and, per their own reasoning, the *correct*) available build.
+        # Pinning it explicitly here, ordered before mflux, satisfies pip's
+        # resolver with a version mflux's own upstream comment says is required.
+        "mlx-cuda-13==0.32.0",
         "mflux @ git+https://github.com/mflux-community/mflux.git",
     ],
     system_dependencies=["libgl1", "libglib2.0-0"],
