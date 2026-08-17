@@ -17,7 +17,7 @@ on:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
     runs-on: ubuntu-latest
     environment: runpod
     steps:
@@ -34,8 +34,13 @@ jobs:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
         # flash deploy always creates new endpoints rather than updating an
         # existing one by name -- without this, every re-run of this workflow
-        # leaves the previous run's endpoints orphaned and billing.
-        run: uv run flash undeploy --all --force || true
+        # leaves the previous run's endpoints orphaned and billing. Scoped by
+        # name (not --all) so this can't touch any other endpoint on the
+        # account. `|| true` on each: a first-ever deploy has nothing to
+        # remove yet, and flash exits non-zero for "not found".
+        run: |
+          uv run flash undeploy mflux-runner --force || true
+          uv run flash undeploy mflux-runner-health --force || true
 
       - name: flash deploy
         env:
