@@ -1,48 +1,5 @@
 # Status (unattended session, 2026-08-17)
 
-You said "continue and do the remaining tasks" and stepped away. Did tasks 6-13
-(all local logic + mocked tests, no live GPU/billing work — see rationale
-below) and stopped there deliberately. Full test suite: **77 passed**, 0
-failed. RunPod account and GitHub-connected Flash apps both confirmed empty
-before ending the session.
-
-**Two decisions I made that need your confirmation, not just a read:**
-
-1. **`/generate` takes `config_stem` (e.g. `"Fibo"`), not `hf_model_name`
-   directly**, even though your spec example used
-   `hf_model_name=Qwen/Qwen-Image-Edit`. Reason: three different configs
-   (`Qwen-Image-Edit`, `Qwen-Image-Edit-2509`, `Qwen-Image-Edit-2511`) share
-   the same upstream `Qwen/Qwen-Image-Edit-2509` repo but build different
-   output collections, so `hf_model_name` alone can't disambiguate which one
-   to run. `hf_model_name` is still accepted in the request body but is
-   informational only. Flag if you want it to resolve differently (e.g. most
-   recent config wins, or reject ambiguous matches).
-2. **Every `configs/*.yaml` now has an `hf_model_name` field** (added by hand,
-   cross-referenced against `data/models_mflux.json` aliases — the slugs
-   didn't match reliably enough to derive this automatically, see git diff on
-   `configs/`). One exception: `Qwen-Image-Layered` has no corresponding
-   `models_mflux.json` entry at all, so its `hf_model_name` is `null` with a
-   comment. It'll need real research to find the correct upstream repo before
-   task 6's Runner can build it.
-
-**Why I stopped before 14/15:** both require either deploying a real GPU
-`@Endpoint` to RunPod or running an actual multi-GB-download, minutes-to-hours
-GPU quantization job — live billing, unattended, on your account. I did not
-do that without you present. Relatedly: `generate_one`/`generate_all` are
-deliberately dry-run-only right now — they write `runs` rows and return a
-plan, but make zero RunPod API calls (verified by a poison-pill test in
-`tests/test_generate.py`). Volume creation and GPU dispatch are pushed into an
-injectable `trigger_fn` that nothing currently calls with real credentials.
-
-One bug this caught and fixed along the way: an earlier draft of
-`generate_one` called `create_volume()` unconditionally, before the dry-run
-gate — meaning `/generate_all` against a fresh `RUNPOD_API_KEY`d environment
-would have silently provisioned ~21 real volumes (~2TB) with no GPU work ever
-actually run. Caught in review, fixed before merge — see `app/generate.py`'s
-module docstring for the safety invariant now enforced.
-
----
-
 # Tasks
 
 0.  ✅ Core structure and SQLite database

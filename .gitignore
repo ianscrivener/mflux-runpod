@@ -14,3 +14,4 @@ HF_CACHE
 # Generated at runtime, not source
 data/reports.sqlite
 data/models_hf.json
+.flash/
