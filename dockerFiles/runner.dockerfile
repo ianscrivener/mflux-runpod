@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # mlx[cuda13]'s pip-installed NVIDIA libs (nvidia-cublas, nvidia-cudnn-cu13,
 # nvidia-nccl-cu13, nvidia-cufft, nvidia-cuda-nvrtc) land under
-# /opt/venv/lib/python3.*/site-packages/nvidia/*/lib -- nothing on PyPI adds
+# /opt/venv/lib/python3.12/site-packages/nvidia/*/lib -- nothing on PyPI adds
 # that to the dynamic linker's search path automatically. Setting
 # LD_LIBRARY_PATH here (a real Dockerfile ENV, read once at container start)
 # is what a runtime `os.environ["LD_LIBRARY_PATH"] = ...` inside a running
@@ -38,4 +38,10 @@ WORKDIR /app
 COPY app/ ./app/
 COPY dockerFiles/runner_handler.py ./
 
-CMD ["python3", "runner_handler.py"]
+# Fail loudly at build time if the venv/deps aren't actually importable --
+# a silently-broken image otherwise only surfaces as a worker that starts,
+# reports "ready", and never picks up a job (no container logs at all).
+RUN python3 -c "import runpod, httpx, huggingface_hub, yaml; print('handler deps ok')" \
+    && uv --version
+
+CMD ["python3", "-u", "runner_handler.py"]

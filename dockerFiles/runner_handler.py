@@ -205,4 +205,10 @@ def handler(event: dict) -> dict:
 
 
 if __name__ == "__main__":
+    # Logged before start() blocks, so "did the handler process actually
+    # come up" is answerable from the worker's container logs. A worker that
+    # reports "ready" (RunPod's own agent message) but never logs this line
+    # means the container started but this script didn't -- the exact
+    # silent-failure mode that made an earlier broken image hard to diagnose.
+    print("mflux runner_handler starting, registering with runpod.serverless", flush=True)
     runpod.serverless.start({"handler": handler})
