@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: flash undeploy (clean slate)
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        # flash deploy always creates new endpoints rather than updating an
+        # existing one by name -- without this, every re-run of this workflow
+        # leaves the previous run's endpoints orphaned and billing.
+        run: uv run flash undeploy --all --force || true
+
       - name: flash deploy
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
