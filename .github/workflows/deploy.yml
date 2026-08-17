@@ -61,6 +61,7 @@ jobs:
         run: |
           uv run flash undeploy mflux-runner --force || true
           uv run flash undeploy mflux-runner-health --force || true
+          uv run flash undeploy mflux-orchestrator --force || true
 
       - name: flash deploy
         env:

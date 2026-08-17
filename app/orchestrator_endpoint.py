@@ -41,28 +41,28 @@ orchestrator = Endpoint(
 
 
 @orchestrator.get("/models_supported")
-async def models_supported(**_kwargs) -> dict:
+async def models_supported() -> dict:
     from app.models_supported import load_models_supported
 
     return load_models_supported()
 
 
 @orchestrator.get("/models_hf")
-async def models_hf(**_kwargs) -> dict:
+async def models_hf() -> dict:
     from app.models_hf import load_models_hf
 
     return load_models_hf()
 
 
 @orchestrator.post("/models_hf/update")
-async def models_hf_update(**_kwargs) -> dict:
+async def models_hf_update() -> dict:
     from app.models_hf import update_models_hf
 
     return update_models_hf()
 
 
 @orchestrator.get("/models_missing")
-async def models_missing(**_kwargs) -> dict:
+async def models_missing() -> dict:
     from app.models_missing import compute_missing, load_configs, load_overrides
     from app.models_hf import load_models_hf
 
@@ -95,7 +95,7 @@ async def generate(data: dict) -> dict:
 
 
 @orchestrator.post("/generate_all")
-async def generate_all_route(**_kwargs) -> dict:
+async def generate_all_route() -> dict:
     from app.db import init_db
     from app.generate import generate_all
 
@@ -147,7 +147,7 @@ async def report(model_series: str | None = None, run_id: int | None = None, lim
 
 
 @orchestrator.get("/health")
-async def health(**_kwargs) -> dict:
+async def health() -> dict:
     return {"status": "ok"}
 
 
