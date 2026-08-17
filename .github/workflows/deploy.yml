@@ -1,6 +1,9 @@
 name: Deploy to RunPod Flash
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       action:
@@ -14,7 +17,7 @@ on:
 
 jobs:
   deploy:
-    if: github.event.inputs.action == 'deploy'
+    if: github.event_name == 'push' || github.event.inputs.action == 'deploy'
     runs-on: ubuntu-latest
     environment: runpod
     steps:
