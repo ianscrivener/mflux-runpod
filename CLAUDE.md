@@ -42,3 +42,15 @@ This project is indexed by GitNexus as **mflux-runpod** (54 symbols, 73 relation
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Modal / Remote Execution
+
+- Any file read at runtime (`renders.yaml`, `models.yaml`, `config.yaml`, etc.)
+  MUST be baked into the Modal image via `.add_local_file()` or mounted
+  explicitly — do not rely on cwd. Verify with an `ls` inside the container
+  before kicking off a long run.
+- Add OS libs proactively when building image-generation images: `libGL`,
+  `libgthread-2.0`, `libxcb`. Set `HF_TOKEN` via a Modal secret up front,
+  don't wait for the failure.
+- Quantized matmul is not supported on CUDA in mflux; use `bf16` on Modal
+  GPUs and note the limitation instead of retrying quantized variants there.
