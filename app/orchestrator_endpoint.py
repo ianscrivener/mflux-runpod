@@ -12,19 +12,21 @@ survives a worker scaling to zero (idle_timeout=60s): a run row written at
 08:11 UTC was still readable an hour later, across multiple worker restarts
 and a full redeploy in between.
 
-Uses `mflux-global-s3` -- the persistent volume created by hand in the RunPod
-console (has RunPod's "Global Networking" + S3-compatible API support) --
-rather than letting Flash auto-create a volume, so this Orchestrator's
-storage is the one, deliberately-provisioned volume, not a Flash-managed one
-that could get recreated under a different id on some future deploy.
+Pinned to EU-RO-1 -- NOT the same datacenter as mflux-runner/
+mflux-runner-health (US-IL-1) -- because Flash's CPU/load-balanced
+endpoints only work in EU-RO-1 (runpod_flash.core.resources.datacenter.
+CPU_DATACENTERS is hardcoded to exactly that one datacenter; confirmed live,
+2026-08-17, via a real `flash deploy` failure: "CPU endpoints are not
+available in: US-IL-1. Supported CPU data centers: EU-RO-1"). This is a
+Flash-specific constraint, separate from which datacenters support network
+volumes/S3 or GPU capacity -- the Orchestrator and the Runner endpoints
+don't need to share a datacenter, since each only mounts its own volume.
 
-Network volumes are datacenter-pinned on RunPod, not truly cross-region (
-confirmed against runpod_flash's own NetworkVolume/serverless resource code
-and RunPod's docs, 2026-08-17) -- "Global Networking" is a per-datacenter
-capability flag enabling the S3-compatible HTTP API, not a volume reachable
-natively from every region. US-IL-1 was chosen because it has that flag;
-every Endpoint in this project (this one, mflux-runner, mflux-runner-health)
-is pinned to the same datacenter so all three can actually mount it.
+`mflux-orchestrator` (this Endpoint's NetworkVolume) is a dedicated volume
+in EU-RO-1, not shared with the Runner's US-IL-1 volume(s) -- network
+volumes are datacenter-pinned on RunPod, not truly cross-region (confirmed
+against runpod_flash's own NetworkVolume/serverless resource code and
+RunPod's docs, 2026-08-17).
 
 Per the Flash skill's Gotcha #1 (only the function body ships to `flash dev`
 workers), every import each route needs is defined inside that route's own
@@ -37,7 +39,7 @@ billed RunPod CPU workers + a network volume. Do that deliberately.
 
 from runpod_flash import CpuInstanceType, DataCenter, Endpoint, NetworkVolume
 
-ORCHESTRATOR_DATACENTER = DataCenter.US_IL_1
+ORCHESTRATOR_DATACENTER = DataCenter.EU_RO_1  # Flash CPU endpoints: EU-RO-1 only
 
 orchestrator = Endpoint(
     name="mflux-orchestrator",
@@ -46,7 +48,7 @@ orchestrator = Endpoint(
     idle_timeout=60,
     datacenter=ORCHESTRATOR_DATACENTER,
     dependencies=["pyyaml", "httpx"],
-    volume=NetworkVolume(name="mflux-global-s3", datacenter=ORCHESTRATOR_DATACENTER, size=10),
+    volume=NetworkVolume(name="mflux-orchestrator", datacenter=ORCHESTRATOR_DATACENTER, size=10),
     env={
         "REPORT_DB_PATH": "/runpod-volume/reports.sqlite",
         # RunPod Secret, injected at runtime -- see app/runner_endpoint.py's

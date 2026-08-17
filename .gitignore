@@ -15,3 +15,13 @@ HF_CACHE
 data/reports.sqlite
 data/models_hf.json
 .flash/
+
+# NOT excluded from git (already tracked -- this entry only stops Flash's
+# `flash deploy` from scanning these as candidate @Endpoint modules, since
+# Flash reads .gitignore as its own ignore-pattern source; see
+# runpod_flash's ignore.py::load_ignore_patterns). These are plain Docker
+# entrypoints (dockerFiles/*_handler.py), not Flash resources -- Flash's
+# static import scan fails on them (e.g. huggingface_hub unresolved
+# locally) and previously aborted every `flash deploy` in the project until
+# excluded, same issue as the old mflux-save.py.
+dockerFiles/
