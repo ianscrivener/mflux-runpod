@@ -32,8 +32,10 @@ deployment-scoped config (Endpoint env=), not request parameters:
     vector — it would let any caller make the worker POST arbitrary payloads
     to an arbitrary host. Only ORCHESTRATOR_BASE_URL, set once at deploy
     time, is used.
-Set both via `flash env` / the Endpoint's env= before deploying — see
-runpod.yaml's runner.env block for the expected keys.
+HF_TOKEN is set below via a RunPod Secret reference ({{ RUNPOD_SECRET_HF_TOKEN }}),
+so its real value is injected at runtime and never appears in plaintext through
+the RunPod API/console. ORCHESTRATOR_BASE_URL is set via `flash env` before
+deploying — see runpod.yaml's runner.env block.
 """
 
 from runpod_flash import CudaVersion, Endpoint, GpuGroup
@@ -67,8 +69,11 @@ runner = Endpoint(
     system_dependencies=["libgl1", "libglib2.0-0"],
     env={
         "HF_XET_HIGH_PERFORMANCE": "1",
-        # Set these at deploy time (flash env / RunPod console), not per-request:
-        # "HF_TOKEN": "hf_...",
+        # RunPod Secret (RunPod console/account) named HF_TOKEN, injected at
+        # runtime -- never appears in plaintext via the RunPod API, unlike a
+        # literal env value here would.
+        "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",
+        # Set at deploy time (flash env / RunPod console), not per-request:
         # "ORCHESTRATOR_BASE_URL": "https://<orchestrator-endpoint>",
     },
 )
@@ -137,6 +142,26 @@ async def run_generation(
                 check=True,
             )
             _mflux_marker.touch()
+
+        # mlx[cuda13] pulls in nvidia-cublas/cudnn/nccl/cufft/cuda-nvrtc as pip
+        # wheels (site-packages/nvidia/*/lib/*.so), but nothing adds that
+        # directory to the dynamic linker's search path -- mlx's compiled
+        # extension fails to dlopen them (e.g. "libcublasLt.so.13: cannot open
+        # shared object file") unless LD_LIBRARY_PATH points at them first.
+        # Must happen before `from app.runner import ...` pulls in mflux/mlx.
+        import glob
+        import site
+
+        site_dirs = [*site.getsitepackages(), site.getusersitepackages()]
+        nvidia_lib_dirs = [
+            d
+            for site_dir in site_dirs
+            for d in glob.glob(os.path.join(site_dir, "nvidia", "*", "lib"))
+        ]
+        if nvidia_lib_dirs:
+            os.environ["LD_LIBRARY_PATH"] = ":".join(
+                nvidia_lib_dirs + [os.environ.get("LD_LIBRARY_PATH", "")]
+            )
 
         from app.runner import build_and_upload_one_quant
 
