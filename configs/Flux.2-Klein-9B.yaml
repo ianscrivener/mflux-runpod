@@ -1,5 +1,6 @@
 model_object: Flux2Klein
 model_config: flux2_klein_9b
+hf_model_name: black-forest-labs/FLUX.2-klein-9B
 quants:
   - bf16
 collection:

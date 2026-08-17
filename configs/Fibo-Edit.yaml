@@ -1,5 +1,6 @@
 model_object: FIBO
 model_config: fibo_edit
+hf_model_name: briaai/Fibo-Edit
 quants:
   - q4
   - q6

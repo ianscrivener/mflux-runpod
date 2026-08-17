@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS runs (
     duration_s          REAL,
     status              TEXT NOT NULL DEFAULT 'running',
     force_hf_overwrite  INTEGER NOT NULL DEFAULT 0,
+    expected_quants     INTEGER NOT NULL DEFAULT 0,
     error               TEXT
 );
 
@@ -42,14 +43,16 @@ CREATE INDEX IF NOT EXISTS idx_runs_model_series ON runs(model_series);
 """
 
 
-def init_db(db_path: Path = DB_PATH) -> None:
+def init_db(db_path: Path | None = None) -> None:
+    db_path = db_path or DB_PATH
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
 
 
 @contextmanager
-def get_connection(db_path: Path = DB_PATH):
+def get_connection(db_path: Path | None = None):
+    db_path = db_path or DB_PATH
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row

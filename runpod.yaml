@@ -23,7 +23,7 @@ runner:
   gpu_type_lge: A100-80GB
   workers:
     min: 0
-    max: 2
+    max: 1
   timeout_seconds: 28800     # 8h, matches old Modal timeout for large multi-quant builds
   network_volume: true       # mounts the ephemeral per-model-series volume created by the orchestrator
   env:
@@ -31,3 +31,7 @@ runner:
     HF_ORG: mflux-community
     HF_XET_HIGH_PERFORMANCE: "1"
     UV_LINK_MODE: copy
+    # Deployment-scoped Orchestrator base URL for the Runner's status callback
+    # (app/runner_endpoint.py) -- deliberately NOT a request parameter, to
+    # avoid an SSRF vector where a caller points the callback at an arbitrary host.
+    ORCHESTRATOR_BASE_URL: ${ORCHESTRATOR_BASE_URL}

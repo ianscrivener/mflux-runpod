@@ -144,3 +144,17 @@ def test_compute_missing_force_exclude_wins_over_force_include(sample_configs):
 
     assert "Fibo" not in result["missing"]
     assert "Fibo" in result["complete"]
+
+
+def test_every_real_config_declares_hf_model_name():
+    """Regression guard: task 6 needs hf_model_name to download source weights.
+    Every configs/*.yaml must at least declare the key (Qwen-Image-Layered is the
+    one known exception, deliberately left null pending manual research)."""
+    configs = load_configs()
+    missing_key = [stem for stem, c in configs.items() if "hf_model_name" not in c]
+    assert missing_key == [], f"configs missing hf_model_name key: {missing_key}"
+
+    null_valued = [stem for stem, c in configs.items() if c["hf_model_name"] is None]
+    assert null_valued == ["Qwen-Image-Layered"], (
+        f"expected only Qwen-Image-Layered to have a null hf_model_name, got: {null_valued}"
+    )

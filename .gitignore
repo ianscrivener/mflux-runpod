@@ -10,4 +10,7 @@ wheels/
 .venv
 
 HF_CACHE
-z_ToDo.txt
+
+# Generated at runtime, not source
+data/reports.sqlite
+data/models_hf.json

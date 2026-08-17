@@ -1,3 +1,48 @@
+# Status (unattended session, 2026-08-17)
+
+You said "continue and do the remaining tasks" and stepped away. Did tasks 6-13
+(all local logic + mocked tests, no live GPU/billing work — see rationale
+below) and stopped there deliberately. Full test suite: **77 passed**, 0
+failed. RunPod account and GitHub-connected Flash apps both confirmed empty
+before ending the session.
+
+**Two decisions I made that need your confirmation, not just a read:**
+
+1. **`/generate` takes `config_stem` (e.g. `"Fibo"`), not `hf_model_name`
+   directly**, even though your spec example used
+   `hf_model_name=Qwen/Qwen-Image-Edit`. Reason: three different configs
+   (`Qwen-Image-Edit`, `Qwen-Image-Edit-2509`, `Qwen-Image-Edit-2511`) share
+   the same upstream `Qwen/Qwen-Image-Edit-2509` repo but build different
+   output collections, so `hf_model_name` alone can't disambiguate which one
+   to run. `hf_model_name` is still accepted in the request body but is
+   informational only. Flag if you want it to resolve differently (e.g. most
+   recent config wins, or reject ambiguous matches).
+2. **Every `configs/*.yaml` now has an `hf_model_name` field** (added by hand,
+   cross-referenced against `data/models_mflux.json` aliases — the slugs
+   didn't match reliably enough to derive this automatically, see git diff on
+   `configs/`). One exception: `Qwen-Image-Layered` has no corresponding
+   `models_mflux.json` entry at all, so its `hf_model_name` is `null` with a
+   comment. It'll need real research to find the correct upstream repo before
+   task 6's Runner can build it.
+
+**Why I stopped before 14/15:** both require either deploying a real GPU
+`@Endpoint` to RunPod or running an actual multi-GB-download, minutes-to-hours
+GPU quantization job — live billing, unattended, on your account. I did not
+do that without you present. Relatedly: `generate_one`/`generate_all` are
+deliberately dry-run-only right now — they write `runs` rows and return a
+plan, but make zero RunPod API calls (verified by a poison-pill test in
+`tests/test_generate.py`). Volume creation and GPU dispatch are pushed into an
+injectable `trigger_fn` that nothing currently calls with real credentials.
+
+One bug this caught and fixed along the way: an earlier draft of
+`generate_one` called `create_volume()` unconditionally, before the dry-run
+gate — meaning `/generate_all` against a fresh `RUNPOD_API_KEY`d environment
+would have silently provisioned ~21 real volumes (~2TB) with no GPU work ever
+actually run. Caught in review, fixed before merge — see `app/generate.py`'s
+module docstring for the safety invariant now enforced.
+
+---
+
 # Tasks
 
 0.  ✅ Core structure and SQLite database
@@ -7,24 +52,51 @@
 4.  ✅ configs/overrides.yaml (manual force-include/exclude) folded into /models_missing
 5.  ✅ Orchestrator: create/reuse per-model-series ephemeral RunPod volume (live-tested against
     real RunPod API: create, reuse-on-duplicate, get, delete). HF source download into the
-    volume is still TBD — needs a Runner/pod context to write to the mounted volume.
-6.  Runner (GPU): read configs/{model}.yaml, build+upload quants, HF Collection grouping
-7.  Async trigger: Orchestrator -> Runner, and Runner -> Orchestrator status callback
-8.  /generate  (single/force/branch override, per PRD)
-9.  /generate_all
-10. /report  (reads/writes reports.sqlite: runs + quant_builds tables)
+    volume: `app/series_lifecycle.py::download_source_weights()` written (mirrors old
+    cpu-admin-hf-cache.py), untested live — needs an actual mounted-volume/pod context to
+    verify, which is GPU/live-billing territory (see status note above).
+6.  ✅ Runner (GPU): `app/runner.py` — ports create-mflux-models.py's dynamic model-class
+    lookup, per-quant build+upload loop, HF Collection grouping. 11 tests, all mocked
+    (fake mflux model class, fake HfApi) — mflux itself is never imported in tests. No
+    @Endpoint decorator; not deployed.
+7.  ⚠️ partial — Orchestrator -> Runner trigger exists as an injectable `trigger_fn` on
+    generate_one/generate_all (app/generate.py), defaulting to a no-op dry run. Runner ->
+    Orchestrator callback exists: `POST /report/run/{run_id}` (app/main.py), tested via
+    FastAPI TestClient. What's NOT done: an actual live trigger_fn that calls a real deployed
+    Runner endpoint — there is no deployed Runner to call yet (needs 14/15 first).
+8.  ✅ /generate  (single/force/branch override, per PRD) — see decision #1 above re:
+    config_stem vs hf_model_name.
+9.  ✅ /generate_all
+10. ✅ /report  (reads/writes reports.sqlite: runs + quant_builds tables) — `app/report.py`,
+    plus GET /report (recent/by-series/by-run-id) and the POST /report/run/{run_id} callback.
 11. ✅ /health & /ping
-12. Ephemeral volume cleanup (delete source weights post-build; delete volume post-verify)
-13. Crash-resume (sha256 manifest.json check on cached builds, matches old create-mflux-models.py)
-14. runpod.yaml wiring: confirm real GPU/CPU machine types & timeouts against RunPod account limits
-15. End-to-end dry run on one small model series (e.g. Flux.1-Schnell) before running full backlog
+12. ✅ Ephemeral volume cleanup — `app/series_lifecycle.py`: delete_source_weights() (frees
+    the source/ subdir once a series' quants are built), teardown_if_complete() (deletes the
+    whole volume only once every quant in the config is live on HF). 10 tests, all local
+    tmp_path + monkeypatched RunPod calls — no live deletes performed here.
+13. ✅ Crash-resume (sha256 manifest.json check) — `app/runner.py::is_locally_valid()` /
+    `hash_dir()`, ported from create-mflux-models.py. Covered by test_runner.py.
+14. ⏸ BLOCKED ON YOU — runpod.yaml wiring: confirm real GPU/CPU machine types & timeouts
+    against RunPod account limits. Needs a decision from you, not just code.
+15. ⏸ BLOCKED ON YOU — End-to-end dry run on one small model series (e.g. Flux.1-Schnell)
+    before running full backlog. This means real GPU billing + a real HF upload. Needs your
+    explicit go-ahead on which model and when, not something to run unattended.
 16. ✅ openapi / swagger interface & swagger.json, openapi.json etc
-17. GitHub Actions to deploy & tear down — .github/workflows/deploy.yml added
+17. ✅ GitHub Actions to deploy & tear down — .github/workflows/deploy.yml
     (workflow_dispatch, deploy/undeploy choice, `uv run flash deploy` /
-    `flash undeploy --all --force`, RUNPOD_API_KEY from repo secrets). Live-tested
-    `flash deploy`/`flash app delete` against the real account and cleaned up.
-    Still needed: add RUNPOD_API_KEY as a GitHub repo secret (Settings > Secrets
-    and variables > Actions), and wrap the Orchestrator as a real Flash
-    @Endpoint (currently app/main.py is a plain FastAPI app with no @Endpoint,
-    so `flash deploy` today only creates an empty app record, not a working
-    serverless endpoint) — that lands with task 6+.
+    `flash undeploy --all --force`, RUNPOD_API_KEY from repo secrets — you've added the
+    secret). Live-tested `flash deploy`/`flash app delete` against the real account and
+    cleaned up (twice — see below). Still needed: wrap the Orchestrator as a real Flash
+    @Endpoint (currently app/main.py is a plain FastAPI app with no @Endpoint, so
+    `flash deploy` today only creates an empty app record, not a working serverless
+    endpoint) — part of 14/15.
+
+**Housekeeping done this session:** fixed a late-binding default-argument bug in
+`app/db.py` (`init_db`/`get_connection` were capturing `DB_PATH` at import time,
+so tests that monkeypatched it were silently sharing one real database across
+runs — now re-read at call time). Added `data/reports.sqlite` and
+`data/models_hf.json` to `.gitignore` (generated, not source); removed the
+stale `z_ToDo.txt` ignore entry (file was renamed to `ToDo.md`). Found and
+deleted a leftover `mflux-runpod` Flash app record on the live RunPod account
+from an earlier deploy test that I'd initially thought was already cleaned up
+— confirmed clean now via `flash app list` / `runpodctl network-volume list`.

@@ -1,5 +1,6 @@
 model_object: SeedVR2
 model_config: seedvr2_3b
+hf_model_name: numz/SeedVR2_comfyUI
 quants:
   - q4
   - q6

@@ -1,5 +1,6 @@
 model_object: QwenImage
 model_config: qwen_image
+hf_model_name: Qwen/Qwen-Image-2512
 quants:
   - q4
   - q6
