@@ -1,0 +1,20 @@
+# Worker Build Recipe
+
+What each of the two services actually needs installed, sourced from what's
+already running in this repo (`app/orchestrator_endpoint.py`,
+`app/runner_endpoint.py`, `runpod.yaml`) — not a fresh spec.
+
+| | Orchestrator (CPU) | GPU Runner |
+|---|---|---|
+| **Role** | Plans runs, tracks state, serves the API, launches/tears down ephemeral GPU Runners | Builds one mflux quant, uploads it to HF, reports back |
+| **OS / base** | Linux (any distro with Python 3.12 + `runpod` CLI available) | Linux, NVIDIA CUDA 13 base image (`nvidia/cuda:13.0.0-*-ubuntu22.04` or `-ubuntu24.04`) |
+| **Python** | 3.12 | 3.12 |
+| **NVIDIA / CUDA** | none | CUDA 13 runtime + driver compatibility (`min_cuda_version=CudaVersion.V13_0` today via Flash; a Docker image would pin this via the base image tag instead) |
+| **System packages (apt)** | none currently required | `libgl1`, `libglib2.0-0` (already in `runner_endpoint.py`'s `system_dependencies=`) |
+| **RunPod tooling** | `runpod` Python SDK (for `create-endpoint`/`create-network-volume`/`delete-endpoint` calls) or the `runpodctl`/`flash` CLI, whichever the Orchestrator ends up using to launch ephemeral Runners | none — the Runner doesn't call back into RunPod's control plane, only into HF and the Orchestrator's `/report` callback |
+| **Python deps (pip)** | `fastapi`, `uvicorn` (if not using Flash's LB wrapper), `pyyaml`, `httpx`, `huggingface_hub`, `runpod-flash` (current) or plain `runpod` SDK (if the Orchestrator moves off Flash) | `huggingface_hub`, `pyyaml`, `httpx` — plus, **installed at container start, not baked into the image**: `mlx[cuda13]>=0.30.3,<0.32.0` and `mflux @ git+https://github.com/mflux-community/mflux.git@{branch}` (branch is a runtime input, so testers can point at any mflux fork/branch without rebuilding the image) |
+| **This project's own code** | `app/` (all of it — the Orchestrator's routes call straight into `app/generate.py`, `app/report.py`, `app/models_*.py`, `app/db.py`, `app/runpod_volumes.py`, `app/series_lifecycle.py`) | `app/runner.py` only (`build_and_upload_one_quant`, `find_model_class`, `resolve_model_config`, etc.) — the entrypoint script is new, everything it calls is already plain, Flash-independent Python |
+| **Persistent storage** | `mflux-global-s3` NetworkVolume, mounted at `/runpod-volume`, holding `reports.sqlite` (live-confirmed to survive worker scale-to-zero and redeploys) | A per-series ephemeral NetworkVolume (sized via `app/runpod_volumes.py::size_for_series()` — upstream HF repo size + `VOLUME_HEADROOM_GB`), holding downloaded source weights + in-progress build artifacts, deleted once the series is complete |
+| **Secrets / env** | `HF_TOKEN` (RunPod Secret), `HF_ORG=mflux-community`, `REPORT_DB_PATH=/runpod-volume/reports.sqlite` | `HF_TOKEN` (RunPod Secret), `HF_XET_HIGH_PERFORMANCE=1`, `ORCHESTRATOR_BASE_URL` (set once the Orchestrator's URL is known — currently the unresolved piece of the callback loop) |
+| **Known-working reference** | `app/orchestrator_endpoint.py` (deployed, `/health` verified 200 live) | `app/runner_endpoint.py`'s `_COMMON_KWARGS` — the exact `dependencies=`/`system_dependencies=`/pip-install/`ctypes.CDLL`-preload sequence that got a real Fibo bf16 build+upload working end to end on 2026-08-17 |
+| **What's NOT settled yet** | Whether it stays on Flash or moves to a plain `runpod` SDK app; how it authenticates to launch/tear down per-series Runners without needing GitHub | Whether it stays a Flash `@Endpoint` (today) or becomes a Docker image with a `runpod.serverless.start({"handler": ...})` entrypoint (discussed, not started) — a Docker image would let `LD_LIBRARY_PATH` just work via the Dockerfile's `ENV`, removing the `ctypes.CDLL` preload hack this session had to build around Flash's runtime-install constraint |

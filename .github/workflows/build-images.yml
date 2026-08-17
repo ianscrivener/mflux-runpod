@@ -1,0 +1,97 @@
+name: Build & Push Docker Images
+
+# Builds the GPU Runner base image (and Orchestrator's, once its Dockerfile
+# is written) and pushes to GHCR. These images rarely change -- they carry
+# CUDA/Python/system libs only, NOT mlx/mflux (installed at container start,
+# see dockerFiles/runner_handler.py) -- so this doesn't need to run on every
+# push, only when a Dockerfile actually changes or on manual dispatch.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "dockerFiles/**"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  runner-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push mflux-runner image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: dockerFiles/runner.dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/mflux-runner:latest
+            ${{ env.REGISTRY }}/${{ github.repository }}/mflux-runner:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  orchestrator-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check orchestrator.dockerfile has content
+        id: check
+        # hashFiles() hashes whatever the glob matches, including an empty
+        # file (a zero-byte file still has a valid hash) -- that can't be
+        # used to detect "empty" at the job-level `if:`, so check file size
+        # directly in a step instead and gate the rest of the job on that.
+        run: |
+          if [ -s dockerFiles/orchestrator.dockerfile ]; then
+            echo "has_content=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_content=false" >> "$GITHUB_OUTPUT"
+            echo "dockerFiles/orchestrator.dockerfile is empty -- skipping build."
+          fi
+
+      - name: Log in to GHCR
+        if: steps.check.outputs.has_content == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.has_content == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push mflux-orchestrator image
+        if: steps.check.outputs.has_content == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: dockerFiles/orchestrator.dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/mflux-orchestrator:latest
+            ${{ env.REGISTRY }}/${{ github.repository }}/mflux-orchestrator:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
