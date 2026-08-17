@@ -80,22 +80,31 @@ def _ensure_mflux_installed(mflux_repo_url: str, mflux_branch: str) -> None:
     if _MFLUX_MARKER.exists() and _MFLUX_MARKER.read_text() == target:
         return
 
+    # Bounded well under RunPod's own job deadline -- a hung network/git
+    # fetch here would otherwise block indefinitely inside handler()'s try
+    # block, past the job's real timeout, without ever reaching the
+    # exception handler that reports a clean failure back to the Orchestrator.
+    install_timeout_s = 300
+
     if target == DEFAULT_TARGET:
         subprocess.run(
             ["uv", "pip", "install", "--quiet", MLX_VERSION_RANGE,
              f"mflux @ git+{mflux_repo_url}@{mflux_branch}"],
-            check=True,
+            check=True, timeout=install_timeout_s,
         )
     else:
         # Custom branch/fork requested -- uninstall whatever mflux is
         # currently present (the default, or a different custom branch from
         # an earlier job on this same warm worker) before installing the
         # requested one.
-        subprocess.run(["uv", "pip", "uninstall", "--quiet", "mflux"], check=False)
+        subprocess.run(
+            ["uv", "pip", "uninstall", "--quiet", "mflux"],
+            check=False, timeout=60,
+        )
         subprocess.run(
             ["uv", "pip", "install", "--quiet", MLX_VERSION_RANGE,
              f"mflux @ git+{mflux_repo_url}@{mflux_branch}"],
-            check=True,
+            check=True, timeout=install_timeout_s,
         )
 
     _MFLUX_MARKER.write_text(target)
@@ -104,15 +113,14 @@ def _ensure_mflux_installed(mflux_repo_url: str, mflux_branch: str) -> None:
 def handler(event: dict) -> dict:
     job_input = event.get("input") or {}
 
-    config_stem = job_input["config_stem"]
-    config = job_input["config"]
-    quant = job_input["quant"]
-    volume_root = job_input["volume_root"]
-    mflux_repo_url = job_input.get("mflux_repo_url", DEFAULT_MFLUX_REPO_URL)
-    mflux_branch = job_input.get("mflux_branch", "main")
-    force_hf_overwrite = job_input.get("force_hf_overwrite", False)
-    already_published = job_input.get("already_published", False)
+    # run_id read first (with a safe default) so a malformed job -- e.g.
+    # missing a required field below -- can still report a structured
+    # failure back to the Orchestrator instead of crashing the worker
+    # process with an unhandled KeyError before the callback URL/run_id are
+    # even known.
     run_id = job_input.get("run_id")
+    quant = job_input.get("quant")
+    config_stem = job_input.get("config_stem")
 
     hf_api = HfApi(token=os.environ.get("HF_TOKEN"))
 
@@ -120,6 +128,18 @@ def handler(event: dict) -> dict:
     error = None
     result = None
     try:
+        # Required-field validation lives inside the try so a missing field
+        # is reported as a normal build failure (structured payload +
+        # Orchestrator callback below), not an unhandled crash.
+        config = job_input["config"]
+        volume_root = job_input["volume_root"]
+        if quant is None or config_stem is None:
+            raise KeyError("config_stem and quant are required job input fields")
+        mflux_repo_url = job_input.get("mflux_repo_url", DEFAULT_MFLUX_REPO_URL)
+        mflux_branch = job_input.get("mflux_branch", "main")
+        force_hf_overwrite = job_input.get("force_hf_overwrite", False)
+        already_published = job_input.get("already_published", False)
+
         _ensure_mflux_installed(mflux_repo_url, mflux_branch)
 
         from app.runner import build_and_upload_one_quant
@@ -133,7 +153,7 @@ def handler(event: dict) -> dict:
             api=hf_api,
         )
         build_status = result["status"]
-    except Exception as exc:  # noqa: BLE001 - report failure back, don't crash the job
+    except Exception as exc:  # noqa: BLE001 - report failure back, don't swallow
         build_status = "failed"
         error = str(exc)
 
