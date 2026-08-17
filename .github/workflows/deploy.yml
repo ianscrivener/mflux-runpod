@@ -1,0 +1,50 @@
+name: Deploy to RunPod Flash
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy or tear down the RunPod Flash endpoints
+        required: true
+        type: choice
+        options:
+          - deploy
+          - undeploy
+        default: deploy
+
+jobs:
+  deploy:
+    if: github.event.inputs.action == 'deploy'
+    runs-on: ubuntu-latest
+    environment: runpod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: flash deploy
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: uv run flash deploy
+
+  undeploy:
+    if: github.event.inputs.action == 'undeploy'
+    runs-on: ubuntu-latest
+    environment: runpod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: flash undeploy
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: uv run flash undeploy --all --force
