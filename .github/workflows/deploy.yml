@@ -29,6 +29,25 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Verify RunPod credentials
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        # flash undeploy's exit code can't be trusted to tell "endpoint not
+        # found" apart from "couldn't authenticate" -- both print
+        # "no endpoints found" and exit 0 (verified locally: a bad
+        # RUNPOD_API_KEY produces the identical message/exit code as a
+        # genuinely absent endpoint). Fail fast here, before undeploy/deploy
+        # run against what might be a bad key, by hitting the REST API
+        # directly and checking for 401/403.
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $RUNPOD_API_KEY" \
+            https://rest.runpod.io/v1/endpoints)
+          if [ "$status" = "401" ] || [ "$status" = "403" ]; then
+            echo "RUNPOD_API_KEY rejected by RunPod API (HTTP $status)"
+            exit 1
+          fi
+
       - name: flash undeploy (clean slate)
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
@@ -36,8 +55,9 @@ jobs:
         # existing one by name -- without this, every re-run of this workflow
         # leaves the previous run's endpoints orphaned and billing. Scoped by
         # name (not --all) so this can't touch any other endpoint on the
-        # account. `|| true` on each: a first-ever deploy has nothing to
-        # remove yet, and flash exits non-zero for "not found".
+        # account. `|| true` on each is now safe to mean "not found" only,
+        # since the credentials step above already ruled out an auth
+        # failure; a first-ever deploy has nothing to remove yet either way.
         run: |
           uv run flash undeploy mflux-runner --force || true
           uv run flash undeploy mflux-runner-health --force || true
