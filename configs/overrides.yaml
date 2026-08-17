@@ -1,0 +1,10 @@
+# Manual overrides for /models_missing (PRD task 4).
+#
+# force_include: config stems that should always be treated as missing, even if
+#                 compute_missing() thinks every quant already exists on HF
+#                 (e.g. to force a rebuild check without --force_hf_overwrite).
+# force_exclude: config stems that should never appear in /models_missing, even
+#                 if quants are genuinely missing on HF (e.g. known-broken model,
+#                 paused pending a manual fix).
+force_include: []
+force_exclude: []

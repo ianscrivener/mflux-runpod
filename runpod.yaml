@@ -1,0 +1,33 @@
+# Sample RunPod Flash machine config for the two services in PRD.md.
+# Values are placeholders -- adjust to actual RunPod plan/region availability.
+
+orchestrator:
+  name: mflux-orchestrator
+  role: cpu
+  cpu_type: cpu3c-1-4       # 1 vCPU / 4GB
+  workers:
+    min: 0
+    max: 1
+  timeout_seconds: 300
+  network_volume: true        # small persistent volume for reports.sqlite (/report history)
+  volume_size_gb: 5
+  env:
+    HF_TOKEN: ${HF_TOKEN}
+    HF_ORG: mflux-community
+    REPORT_DB_PATH: /workspace/reports.sqlite
+
+runner:
+  name: mflux-runner
+  role: gpu
+  gpu_type_std: NVIDIA_GEFORCE_RTX_4090   # RunPod Flash GpuType.NVIDIA_GEFORCE_RTX_4090
+  gpu_type_lge: A100-80GB
+  workers:
+    min: 0
+    max: 2
+  timeout_seconds: 28800     # 8h, matches old Modal timeout for large multi-quant builds
+  network_volume: true       # mounts the ephemeral per-model-series volume created by the orchestrator
+  env:
+    HF_TOKEN: ${HF_TOKEN}
+    HF_ORG: mflux-community
+    HF_XET_HIGH_PERFORMANCE: "1"
+    UV_LINK_MODE: copy

@@ -1,0 +1,907 @@
+{
+  "dev": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-dev",
+    "model_aliases": [
+      "dev"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "schnell": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-schnell",
+    "model_aliases": [
+      "schnell"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-schnell",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-kontext": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-kontext",
+    "model_aliases": [
+      "dev-kontext"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Kontext-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate-kontext"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-fill": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-fill",
+    "model_aliases": [
+      "dev-fill"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Fill-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate-fill"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-redux": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-redux",
+    "model_aliases": [
+      "dev-redux"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Redux-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate-redux"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-depth": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-depth",
+    "model_aliases": [
+      "dev-depth"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Depth-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate-depth"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-controlnet-canny": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-controlnet",
+    "model_aliases": [
+      "dev-controlnet-canny"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-dev",
+      "controlnet_repo": "InstantX/FLUX.1-dev-Controlnet-Canny",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-controlnet"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "schnell-controlnet-canny": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-controlnet",
+    "model_aliases": [
+      "schnell-controlnet-canny"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-schnell",
+      "controlnet_repo": "InstantX/FLUX.1-dev-Controlnet-Canny",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-controlnet"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-controlnet-upscaler": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-controlnet",
+    "model_aliases": [
+      "dev-controlnet-upscaler"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-dev",
+      "controlnet_repo": "jasperai/Flux.1-dev-Controlnet-Upscaler",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-upscale-controlnet"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "dev-fill-catvton": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-fill",
+    "model_aliases": [
+      "dev-fill-catvton"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Fill-dev",
+      "custom_transformer_repo": "xiaozaa/catvton-flux-beta",
+      "license": null,
+      "status": "experimental"
+    },
+    "mflux_cli": [
+      "mflux-generate-in-context-catvton"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "krea-dev": {
+    "model_type": "image",
+    "model_family": "flux1",
+    "model_sub_family": "flux1-krea",
+    "model_aliases": [
+      "krea-dev",
+      "dev-krea"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.1-Krea-dev",
+      "license": null,
+      "status": "maintenance"
+    },
+    "mflux_cli": [
+      "mflux-generate"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "flux2-klein-4b": {
+    "model_type": "image",
+    "model_family": "flux2",
+    "model_sub_family": "flux2-klein",
+    "model_aliases": [
+      "flux2-klein-4b",
+      "flux2-klein-4B",
+      "flux2-klein",
+      "klein-4b",
+      "klein-4B"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-flux2",
+      "mflux-generate-flux2-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "flux2-klein-9b": {
+    "model_type": "image",
+    "model_family": "flux2",
+    "model_sub_family": "flux2-klein",
+    "model_aliases": [
+      "flux2-klein-9b",
+      "flux2-klein-9B",
+      "klein-9b",
+      "klein-9B"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.2-klein-9B",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-flux2",
+      "mflux-generate-flux2-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "flux2-klein-9b-kv": {
+    "model_type": "image",
+    "model_family": "flux2",
+    "model_sub_family": "flux2-klein",
+    "model_aliases": [
+      "flux2-klein-9b-kv",
+      "flux2-klein-9B-kv",
+      "flux2-klein-9b-KV",
+      "klein-9b-kv",
+      "klein-9B-kv"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.2-klein-9b-kv",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-flux2",
+      "mflux-generate-flux2-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "flux2-klein-base-4b": {
+    "model_type": "image",
+    "model_family": "flux2",
+    "model_sub_family": "flux2-klein-base",
+    "model_aliases": [
+      "flux2-klein-base-4b",
+      "flux2-klein-base-4B",
+      "flux2-base-4b",
+      "flux2-base-4B",
+      "klein-base-4b",
+      "klein-base-4B"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.2-klein-base-4B",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-flux2",
+      "mflux-generate-flux2-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "flux2-klein-base-9b": {
+    "model_type": "image",
+    "model_family": "flux2",
+    "model_sub_family": "flux2-klein-base",
+    "model_aliases": [
+      "flux2-klein-base-9b",
+      "flux2-klein-base-9B",
+      "flux2-base-9b",
+      "flux2-base-9B",
+      "klein-base-9b",
+      "klein-base-9B"
+    ],
+    "upstream": {
+      "repo": "black-forest-labs/FLUX.2-klein-base-9B",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-flux2",
+      "mflux-generate-flux2-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "krea-2": {
+    "model_type": "image",
+    "model_family": "krea2",
+    "model_sub_family": "krea2-turbo",
+    "model_aliases": [
+      "krea-2",
+      "krea2"
+    ],
+    "upstream": {
+      "repo": "krea/Krea-2-Turbo",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-krea2"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "krea-2-raw": {
+    "model_type": "image",
+    "model_family": "krea2",
+    "model_sub_family": "krea2-raw",
+    "model_aliases": [
+      "krea-2-raw",
+      "krea2-raw"
+    ],
+    "upstream": {
+      "repo": "krea/Krea-2-Raw",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-krea2"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "qwen-image": {
+    "model_type": "image",
+    "model_family": "qwen-image",
+    "model_sub_family": "qwen-image",
+    "model_aliases": [
+      "qwen-image",
+      "qwen",
+      "qwen-image-2512",
+      "qwen-2512"
+    ],
+    "upstream": {
+      "repo": "Qwen/Qwen-Image-2512",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-qwen"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "qwen-image-edit": {
+    "model_type": "image",
+    "model_family": "qwen-image",
+    "model_sub_family": "qwen-image-edit",
+    "model_aliases": [
+      "qwen-image-edit",
+      "qwen-edit",
+      "qwen-edit-plus",
+      "qwen-edit-2509",
+      "qwen-edit-2511",
+      "qwen-image-edit-2511"
+    ],
+    "upstream": {
+      "repo": "Qwen/Qwen-Image-Edit-2509",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-qwen-edit"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "fibo": {
+    "model_type": "image",
+    "model_family": "fibo",
+    "model_sub_family": "fibo",
+    "model_aliases": [
+      "fibo"
+    ],
+    "upstream": {
+      "repo": "briaai/FIBO",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-fibo"
+    ],
+    "mflux_cli_tools": [
+      "mflux-refine-fibo",
+      "mflux-inspire-fibo"
+    ]
+  },
+  "fibo-lite": {
+    "model_type": "image",
+    "model_family": "fibo",
+    "model_sub_family": "fibo-lite",
+    "model_aliases": [
+      "fibo-lite",
+      "fibo_lite"
+    ],
+    "upstream": {
+      "repo": "briaai/Fibo-lite",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-fibo"
+    ],
+    "mflux_cli_tools": [
+      "mflux-refine-fibo",
+      "mflux-inspire-fibo"
+    ]
+  },
+  "fibo-edit": {
+    "model_type": "image",
+    "model_family": "fibo",
+    "model_sub_family": "fibo-edit",
+    "model_aliases": [
+      "fibo-edit",
+      "fiboedit"
+    ],
+    "upstream": {
+      "repo": "briaai/Fibo-Edit",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-fibo-edit"
+    ],
+    "mflux_cli_tools": [
+      "mflux-refine-fibo",
+      "mflux-inspire-fibo"
+    ]
+  },
+  "fibo-edit-rmbg": {
+    "model_type": "image",
+    "model_family": "fibo",
+    "model_sub_family": "fibo-edit",
+    "model_aliases": [
+      "fibo-edit-rmbg",
+      "fiboedit-rmbg"
+    ],
+    "upstream": {
+      "repo": "briaai/Fibo-Edit-RMBG",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-fibo-edit"
+    ],
+    "mflux_cli_tools": [
+      "mflux-refine-fibo",
+      "mflux-inspire-fibo"
+    ]
+  },
+  "z-image": {
+    "model_type": "image",
+    "model_family": "z-image",
+    "model_sub_family": "z-image",
+    "model_aliases": [
+      "z-image",
+      "zimage"
+    ],
+    "upstream": {
+      "repo": "Tongyi-MAI/Z-Image",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-z-image"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "z-image-turbo": {
+    "model_type": "image",
+    "model_family": "z-image",
+    "model_sub_family": "z-image-turbo",
+    "model_aliases": [
+      "z-image-turbo",
+      "zimage-turbo"
+    ],
+    "upstream": {
+      "repo": "Tongyi-MAI/Z-Image-Turbo",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-z-image-turbo"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "z-image-turbo-controlnet-union-2.1": {
+    "model_type": "image",
+    "model_family": "z-image",
+    "model_sub_family": "z-image-controlnet",
+    "model_aliases": [
+      "z-image-turbo-controlnet-union-2.1",
+      "z-image-controlnet-union-2.1",
+      "z-image-controlnet",
+      "z-image-turbo-controlnet"
+    ],
+    "upstream": {
+      "repo": "Tongyi-MAI/Z-Image-Turbo",
+      "controlnet_repo": "alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-z-image-controlnet"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "ernie-image": {
+    "model_type": "image",
+    "model_family": "ernie-image",
+    "model_sub_family": "ernie-image",
+    "model_aliases": [
+      "ernie-image"
+    ],
+    "upstream": {
+      "repo": "baidu/ERNIE-Image",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-ernie-image"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "ernie-image-turbo": {
+    "model_type": "image",
+    "model_family": "ernie-image",
+    "model_sub_family": "ernie-image-turbo",
+    "model_aliases": [
+      "ernie-image-turbo"
+    ],
+    "upstream": {
+      "repo": "baidu/ERNIE-Image-Turbo",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-ernie-image-turbo"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "ideogram-4-fp8": {
+    "model_type": "image",
+    "model_family": "ideogram4",
+    "model_sub_family": "ideogram4-fp8",
+    "model_aliases": [
+      "ideogram-4-fp8",
+      "ideogram4-fp8",
+      "ideogram4",
+      "ideogram-4",
+      "ideogram"
+    ],
+    "upstream": {
+      "repo": "ideogram-ai/ideogram-4-fp8",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-ideogram4"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "boogu-image-turbo": {
+    "model_type": "image",
+    "model_family": "boogu",
+    "model_sub_family": "boogu-image-turbo",
+    "model_aliases": [
+      "boogu-image-turbo",
+      "boogu-turbo",
+      "boogu-image",
+      "boogu"
+    ],
+    "upstream": {
+      "repo": "Boogu/Boogu-Image-0.1-Turbo",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-boogu"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "lens-turbo": {
+    "model_type": "image",
+    "model_family": "lens",
+    "model_sub_family": "lens-turbo",
+    "model_aliases": [
+      "lens-turbo",
+      "lens"
+    ],
+    "upstream": {
+      "repo": "Comfy-Org/Lens",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-generate-lens"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "seedvr2-3b": {
+    "model_type": "video-upscale",
+    "model_family": "seedvr2",
+    "model_sub_family": "seedvr2-3b",
+    "model_aliases": [
+      "seedvr2-3b",
+      "seedvr2"
+    ],
+    "upstream": {
+      "repo": "numz/SeedVR2_comfyUI",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-upscale-seedvr2"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "seedvr2-7b": {
+    "model_type": "video-upscale",
+    "model_family": "seedvr2",
+    "model_sub_family": "seedvr2-7b",
+    "model_aliases": [
+      "seedvr2-7b",
+      "seedvr2-7B"
+    ],
+    "upstream": {
+      "repo": "numz/SeedVR2_comfyUI",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [
+      "mflux-upscale-seedvr2"
+    ],
+    "mflux_cli_tools": [],
+    "quants": [
+      "q3",
+      "q4",
+      "q5",
+      "q6",
+      "q8",
+      "bf16"
+    ]
+  },
+  "depth-pro": {
+    "model_type": "depth-estimation",
+    "model_family": "depth-pro",
+    "model_sub_family": "depth-pro",
+    "model_aliases": [],
+    "upstream": {
+      "repo": "apple/DepthPro",
+      "license": null,
+      "status": "active"
+    },
+    "mflux_cli": [],
+    "mflux_cli_tools": [
+      "mflux-save-depth"
+    ]
+  }
+}
