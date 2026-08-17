@@ -48,18 +48,21 @@ runner = Endpoint(
         "huggingface_hub",
         "pyyaml",
         "httpx",
-        # mflux-community/mflux's pyproject.toml pins "mlx[cuda13]>=0.30.3,<0.32.0"
-        # for Linux, but the only mlx-cuda-13 release published on PyPI is 0.32.0 --
-        # outside that range, so a plain `pip install mflux` fails to resolve on
-        # Linux entirely (verified against a real ubuntu-latest GitHub Actions
-        # runner, not just locally). mflux's own code comment says mlx <0.32.0 has
-        # a known quantized_matmul correctness bug and their macOS pin already
-        # requires >=0.32.0 -- the Linux pin is a stale copy-paste that excludes
-        # the only (and, per their own reasoning, the *correct*) available build.
-        # Pinning it explicitly here, ordered before mflux, satisfies pip's
-        # resolver with a version mflux's own upstream comment says is required.
-        "mlx-cuda-13==0.32.0",
-        "mflux @ git+https://github.com/mflux-community/mflux.git",
+        # mlx-cuda-13 and mflux are deliberately NOT listed here. Flash's
+        # `flash deploy` bundler installs dependencies=[] with
+        # `--platform manylinux_2_28/2_17/manylinux2014 --only-binary=:all:`
+        # (cross-compiling for the worker from the CI/dev machine). Two things
+        # break under that:
+        #   1. mlx-cuda-13's only wheels are tagged manylinux_2_35_x86_64 --
+        #      newer than every platform tag Flash requests, so pip reports
+        #      "no matching distribution" even though the package is real and
+        #      the pinned mflux range (>=0.30.3,<0.32.0 per mflux's own
+        #      pyproject.toml) is satisfiable.
+        #   2. `mflux @ git+...` is a source/VCS dependency, which
+        #      --only-binary=:all: forbids building, independent of (1).
+        # Neither is fixable by pinning a version here. Instead, install both
+        # at worker runtime (native linux_x86_64, no cross-platform/binary-only
+        # constraints) the first time this worker handles a request.
     ],
     system_dependencies=["libgl1", "libglib2.0-0"],
     env={
@@ -97,12 +100,12 @@ async def run_generation(
     a future pre-staging optimization but is not on this path yet.
     """
     import os
+    import subprocess
+    import sys
     import time
     from pathlib import Path
 
     from huggingface_hub import HfApi
-
-    from app.runner import build_and_upload_one_quant
 
     # HF_TOKEN comes only from this endpoint's deployment env (see module
     # docstring) — never accepted as a request parameter, so a warm worker
@@ -113,6 +116,30 @@ async def run_generation(
     error = None
     result = None
     try:
+        # mlx-cuda-13/mflux aren't in this Endpoint's dependencies=[] -- Flash's
+        # deploy-time bundler cross-compiles with --only-binary=:all: against a
+        # manylinux platform list that doesn't include mlx-cuda-13's actual
+        # wheel tag (manylinux_2_35_x86_64), and separately can't install a
+        # git-source package like mflux under --only-binary=:all: at all (see
+        # the dependencies= comment above). Installing here runs natively on
+        # the worker itself, where neither constraint applies. Guarded by a
+        # marker file on the worker's local disk so a warm worker only pays
+        # this once; a failed install is reported back like any other failure
+        # instead of crashing the job unhandled.
+        _mflux_marker = Path("/tmp/.mflux_runner_deps_installed")
+        if not _mflux_marker.exists():
+            subprocess.run(
+                [
+                    sys.executable, "-m", "pip", "install", "--quiet",
+                    "mlx[cuda13]>=0.30.3,<0.32.0",
+                    "mflux @ git+https://github.com/mflux-community/mflux.git",
+                ],
+                check=True,
+            )
+            _mflux_marker.touch()
+
+        from app.runner import build_and_upload_one_quant
+
         result = build_and_upload_one_quant(
             config,
             quant,
