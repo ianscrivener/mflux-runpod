@@ -51,6 +51,11 @@ orchestrator = Endpoint(
     volume=NetworkVolume(name="mflux-orchestrator", datacenter=ORCHESTRATOR_DATACENTER, size=10),
     env={
         "REPORT_DB_PATH": "/runpod-volume/reports.sqlite",
+        # Same reasoning as REPORT_DB_PATH: without this, the HF manifest is
+        # written to container-local disk and is lost every time the worker
+        # scales to zero, so /models_hf returns an empty list until someone
+        # re-runs /models_hf/update.
+        "MODELS_HF_PATH": "/runpod-volume/models_hf.json",
         # RunPod Secret, injected at runtime -- see app/runner_endpoint.py's
         # identical HF_TOKEN handling for why this isn't a literal value.
         "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",

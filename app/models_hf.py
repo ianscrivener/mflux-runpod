@@ -5,7 +5,18 @@ import os
 import tempfile
 from pathlib import Path
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "models_hf.json"
+# Overridable via MODELS_HF_PATH so the deployed Orchestrator can put this on
+# its mounted NetworkVolume (/runpod-volume), same as db.py does with
+# REPORT_DB_PATH. Without that, the manifest is written to container-local
+# disk and silently vanishes every time the worker idles out and scales to
+# zero -- /models_hf would then return an empty list until someone re-ran
+# /models_hf/update, which is exactly the bug this file used to have.
+DATA_PATH = Path(
+    os.environ.get(
+        "MODELS_HF_PATH",
+        Path(__file__).resolve().parent.parent / "data" / "models_hf.json",
+    )
+)
 HF_ORG = os.environ.get("HF_ORG", "mflux-community")
 
 
@@ -53,9 +64,10 @@ def hf_repo_size_gb(repo_id: str) -> float:
     return round(size_bytes / 1_000_000_000, 2)
 
 
-def scan_models_hf(organization: str = HF_ORG) -> dict:
+def scan_models_hf(organization: str | None = None) -> dict:
     from huggingface_hub import HfApi
 
+    organization = organization or HF_ORG
     token = os.environ.get("HF_TOKEN")
     api = HfApi(token=token)
     model_ids = sorted(model.id for model in api.list_models(author=organization))
@@ -63,7 +75,11 @@ def scan_models_hf(organization: str = HF_ORG) -> dict:
     return {"hf_models": models}
 
 
-def write_models_hf(manifest: dict, data_path: Path = DATA_PATH) -> None:
+def write_models_hf(manifest: dict, data_path: Path | None = None) -> None:
+    # Default resolved at call time, not import time -- a module-level default
+    # would capture DATA_PATH once and ignore later monkeypatching in tests
+    # (the same late-binding bug previously fixed in app/db.py).
+    data_path = data_path or DATA_PATH
     data_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -76,14 +92,24 @@ def write_models_hf(manifest: dict, data_path: Path = DATA_PATH) -> None:
     tmp_path.replace(data_path)
 
 
-def load_models_hf(data_path: Path = DATA_PATH) -> dict:
+def load_models_hf(data_path: Path | None = None) -> dict:
+    data_path = data_path or DATA_PATH
     if not data_path.exists():
         return {"hf_models": []}
-    with open(data_path, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(data_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        # A truncated/corrupt manifest (e.g. a crash mid-write, or a partially
+        # written file on the network volume) should read as "nothing scanned
+        # yet" so /models_hf and /models_missing degrade to an empty manifest
+        # rather than 500ing the whole endpoint.
+        return {"hf_models": []}
 
 
-def update_models_hf(organization: str = HF_ORG, data_path: Path = DATA_PATH) -> dict:
-    manifest = scan_models_hf(organization)
+def update_models_hf(organization: str | None = None, data_path: Path | None = None) -> dict:
+    # organization resolved at call time too, so HF_ORG can be set per-process
+    # (e.g. from the Endpoint's env) rather than frozen at import.
+    manifest = scan_models_hf(organization or HF_ORG)
     write_models_hf(manifest, data_path)
     return manifest
