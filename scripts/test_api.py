@@ -5,7 +5,8 @@ no live calls) -- this is `just test-api`, a quick "is it actually up and
 returning sane data" check against the real thing.
 
 Usage:
-  RUNPOD_API_KEY=... python scripts/test_api.py
+  RUNPOD_API_KEY=... python scripts/test_api.py            # full summary (all endpoints)
+  RUNPOD_API_KEY=... python scripts/test_api.py /models_hf # one endpoint, raw JSON to stdout
   API_BASE_URL=http://127.0.0.1:8791 python scripts/test_api.py   # local dev server
 
 Exits non-zero if any endpoint fails, so it's usable as a CI/deploy gate.
@@ -43,6 +44,26 @@ def _resolve_base_url(api_key: str) -> str:
     raise SystemExit(f"No deployed endpoint named {ENDPOINT_NAME!r} found")
 
 
+def _headers(api_key: str) -> dict:
+    # RunPod authenticates LB endpoints at the edge -- every path 401s
+    # without this, including /health. Harmless no-op against a local
+    # plain-FastAPI dev server, which doesn't check it.
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def fetch_json(path: str) -> None:
+    """Fetch one endpoint and print its raw JSON response -- what each
+    `just <endpoint>` recipe calls (e.g. `just models_hf`)."""
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if not api_key:
+        raise SystemExit("RUNPOD_API_KEY not set")
+
+    base_url = _resolve_base_url(api_key)
+    resp = httpx.get(f"{base_url}{path}", headers=_headers(api_key), timeout=30.0)
+    resp.raise_for_status()
+    print(json.dumps(resp.json(), indent=2))
+
+
 def main() -> None:
     api_key = os.environ.get("RUNPOD_API_KEY")
     if not api_key:
@@ -51,10 +72,7 @@ def main() -> None:
     base_url = _resolve_base_url(api_key)
     print(f"Target: {base_url}\n")
 
-    # RunPod authenticates LB endpoints at the edge -- every path 401s
-    # without this, including /health. Harmless no-op against a local
-    # plain-FastAPI dev server, which doesn't check it.
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = _headers(api_key)
 
     ok = True
 
@@ -100,4 +118,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        fetch_json(sys.argv[1])
+    else:
+        main()
