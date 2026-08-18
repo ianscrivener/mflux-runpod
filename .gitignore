@@ -34,3 +34,16 @@ dockerFiles/
 # 2026-08-18: mflux-runner/mflux-runner-health came back after the move,
 # before this entry was added).
 _deprecated/
+z_*.*
+
+# Same reasoning again: scripts/sync_runner_orchestrator_url.py and
+# scripts/test_api.py both do `from resolve_orchestrator_url import ...` --
+# a bare same-directory import that only resolves when the script is run
+# directly (Python adds its own dir to sys.path in __main__ mode). Flash's
+# scanner imports each .py file in isolation, not as __main__, so that
+# import fails there. Confirmed live, 2026-08-18: this took mflux-orchestrator
+# down (clean-slate deleted the old one, `flash deploy` then failed outright
+# on ModuleNotFoundError: No module named 'resolve_orchestrator_url' trying
+# to recreate it) -- not just a warning like app/runner.py's dynamic-import
+# notice, a hard deploy failure. None of these are Flash resources anyway.
+scripts/
