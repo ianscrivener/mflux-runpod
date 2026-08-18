@@ -16,6 +16,7 @@ name is decoration for the RunPod console, not the lookup key.
 """
 
 import os
+import re
 import uuid
 
 import httpx
@@ -150,46 +151,64 @@ def get_volume(volume_id: str, client: httpx.Client | None = None) -> dict:
     return response.json()
 
 
+_SERIES_VOLUME_NAME_RE = re.compile(r"^mflux-[0-9a-f]{8}-(?P<model_series>.+)$")
+
+
 def list_active_series_volumes(client: httpx.Client | None = None) -> list[dict]:
-    """List every ephemeral per-series volume currently on record (deleted_at
-    IS NULL in series_volumes), enriched with live size/datacenter from
-    RunPod. These are build-scratch volumes, not the model store itself —
+    """List every ephemeral per-series volume currently live on RunPod.
+
+    RunPod's own volume list is the source of truth for "does it exist" —
+    the series_volumes DB table (deleted_at IS NULL rows) is only used to
+    label which model_series a volume belongs to and when it was created,
+    when a matching row happens to exist. A volume that's real on RunPod
+    but has no DB row (e.g. created via a different Orchestrator instance,
+    or outside create_volume() entirely) is still listed — falling back to
+    parsing model_series from its name — rather than silently disappearing,
+    which is what a DB-only listing did before (see 2026-08-18 bug: a real,
+    live volume was invisible here because the only create_volume() call
+    that ever recorded it wrote to a different Orchestrator's database).
+
+    Filters to names matching `mflux-<8-hex-uuid>-<model_series>` (see
+    volume_name_for_series) — excludes the Orchestrator's own persistent
+    volume ("mflux-orchestrator"), which doesn't match that shape.
+
+    These are build-scratch volumes, not the model store itself —
     build_and_upload_one_quant deletes each quant's local build directory
     right after a successful upload, so a listed volume is usually either
     empty or holding exactly one in-progress build, not a catalog of
-    finished models (those live on Hugging Face; see app.models_hf).
-
-    A volume whose RunPod resource no longer exists (deleted outside this
-    app, or a stale DB row) is still listed with its DB fields but
-    runpod=None, rather than raising — a listing endpoint shouldn't 500 over
-    one stale entry."""
+    finished models (those live on Hugging Face; see app.models_hf)."""
     from app.db import get_connection
 
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT model_series, volume_id, volume_name, created_at "
-            "FROM series_volumes WHERE deleted_at IS NULL ORDER BY created_at DESC"
-        ).fetchall()
+        db_rows = {
+            row["volume_id"]: {"model_series": row["model_series"], "created_at": row["created_at"]}
+            for row in conn.execute(
+                "SELECT volume_id, model_series, created_at "
+                "FROM series_volumes WHERE deleted_at IS NULL"
+            ).fetchall()
+        }
 
     client = client or _default_client()
     result = []
-    for row in rows:
-        entry = {
-            "model_series": row["model_series"],
-            "volume_id": row["volume_id"],
-            "volume_name": row["volume_name"],
-            "created_at": row["created_at"],
-            "runpod": None,
-        }
-        try:
-            volume = get_volume(row["volume_id"], client=client)
-            entry["runpod"] = {
+    for volume in list_volumes(client=client):
+        name = volume.get("name", "")
+        match = _SERIES_VOLUME_NAME_RE.match(name)
+        if not match:
+            continue
+
+        volume_id = volume["id"]
+        db_row = db_rows.get(volume_id)
+        result.append({
+            "model_series": (db_row or {}).get("model_series") or match.group("model_series"),
+            "volume_id": volume_id,
+            "volume_name": name,
+            "created_at": (db_row or {}).get("created_at"),
+            "tracked_in_db": db_row is not None,
+            "runpod": {
                 "size_gb": volume.get("size"),
                 "data_center_id": volume.get("dataCenterId"),
-            }
-        except httpx.HTTPStatusError:
-            pass
-        result.append(entry)
+            },
+        })
     return result
 
 
