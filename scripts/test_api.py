@@ -4,64 +4,28 @@ summary per endpoint. Not a pytest suite (tests/ covers that with mocks,
 no live calls) -- this is `just test-api`, a quick "is it actually up and
 returning sane data" check against the real thing.
 
+Individual endpoints (`just health`, `just models_hf`, ...) are plain curl
+commands in the justfile instead -- see scripts/resolve_orchestrator_url.py,
+which this also uses, for why the URL isn't hardcoded here either.
+
 Usage:
-  RUNPOD_API_KEY=... python scripts/test_api.py            # full summary (all endpoints)
-  RUNPOD_API_KEY=... python scripts/test_api.py /models_hf # one endpoint, raw JSON to stdout
+  RUNPOD_API_KEY=... python scripts/test_api.py
   API_BASE_URL=http://127.0.0.1:8791 python scripts/test_api.py   # local dev server
 
 Exits non-zero if any endpoint fails, so it's usable as a CI/deploy gate.
 """
 
-import json
 import os
 import sys
 
 import httpx
 
-RUNPOD_API_BASE = "https://rest.runpod.io/v1"
-ENDPOINT_NAME = "mflux-orchestrator"
+from resolve_orchestrator_url import resolve_base_url
 
 
 def _resolve_base_url(api_key: str) -> str:
-    """API_BASE_URL wins if set (for a local dev server). Otherwise looks up
-    the deployed mflux-orchestrator by name -- its endpoint id/URL changes
-    on every redeploy, so hardcoding one would silently go stale."""
     explicit = os.environ.get("API_BASE_URL")
-    if explicit:
-        return explicit.rstrip("/")
-
-    resp = httpx.get(
-        f"{RUNPOD_API_BASE}/endpoints",
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    endpoints = resp.json()
-    for ep in endpoints if isinstance(endpoints, list) else endpoints.get("items", []):
-        if ep.get("name") == ENDPOINT_NAME:
-            base = ep.get("requestUrls", {}).get("base") or f"https://{ep['id']}.api.runpod.ai"
-            return base.rstrip("/")
-    raise SystemExit(f"No deployed endpoint named {ENDPOINT_NAME!r} found")
-
-
-def _headers(api_key: str) -> dict:
-    # RunPod authenticates LB endpoints at the edge -- every path 401s
-    # without this, including /health. Harmless no-op against a local
-    # plain-FastAPI dev server, which doesn't check it.
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-def fetch_json(path: str) -> None:
-    """Fetch one endpoint and print its raw JSON response -- what each
-    `just <endpoint>` recipe calls (e.g. `just models_hf`)."""
-    api_key = os.environ.get("RUNPOD_API_KEY")
-    if not api_key:
-        raise SystemExit("RUNPOD_API_KEY not set")
-
-    base_url = _resolve_base_url(api_key)
-    resp = httpx.get(f"{base_url}{path}", headers=_headers(api_key), timeout=30.0)
-    resp.raise_for_status()
-    print(json.dumps(resp.json(), indent=2))
+    return explicit.rstrip("/") if explicit else resolve_base_url(api_key)
 
 
 def main() -> None:
@@ -72,7 +36,10 @@ def main() -> None:
     base_url = _resolve_base_url(api_key)
     print(f"Target: {base_url}\n")
 
-    headers = _headers(api_key)
+    # RunPod authenticates LB endpoints at the edge -- every path 401s
+    # without this, including /health. Harmless no-op against a local
+    # plain-FastAPI dev server, which doesn't check it.
+    headers = {"Authorization": f"Bearer {api_key}"}
 
     ok = True
 
@@ -118,7 +85,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        fetch_json(sys.argv[1])
-    else:
-        main()
+    main()
