@@ -74,15 +74,17 @@ def test_report_run_callback_one_quant_of_many_is_partial(client):
     callback_resp = client.post(
         f"/report/run/{run_id}",
         json={
-            "finished_at": "2026-08-17T01:00:00",
-            "quant_builds": [
-                {
-                    "quant": "q4",
-                    "status": "uploaded",
-                    "total_size_bytes": 5000,
-                    "hf_repo_id": "mflux-community/fibo-mflux-q4",
-                }
-            ],
+            "data": {
+                "finished_at": "2026-08-17T01:00:00",
+                "quant_builds": [
+                    {
+                        "quant": "q4",
+                        "status": "uploaded",
+                        "total_size_bytes": 5000,
+                        "hf_repo_id": "mflux-community/fibo-mflux-q4",
+                    }
+                ],
+            },
         },
     )
     assert callback_resp.status_code == 200
@@ -101,8 +103,10 @@ def test_report_run_callback_all_quants_reported_is_success(client):
         resp = client.post(
             f"/report/run/{run_id}",
             json={
-                "finished_at": "2026-08-17T01:00:00",
-                "quant_builds": [{"quant": quant, "status": "uploaded"}],
+                "data": {
+                    "finished_at": "2026-08-17T01:00:00",
+                    "quant_builds": [{"quant": quant, "status": "uploaded"}],
+                },
             },
         )
         assert resp.status_code == 200
@@ -120,8 +124,10 @@ def test_report_run_callback_any_failure_marks_run_failed(client):
         resp = client.post(
             f"/report/run/{run_id}",
             json={
-                "finished_at": "2026-08-17T01:00:00",
-                "quant_builds": [{"quant": quant, "status": status}],
+                "data": {
+                    "finished_at": "2026-08-17T01:00:00",
+                    "quant_builds": [{"quant": quant, "status": status}],
+                },
             },
         )
 
@@ -132,7 +138,9 @@ def test_report_run_callback_any_failure_marks_run_failed(client):
 
 
 def test_report_run_callback_unknown_run_404(client):
-    resp = client.post(f"/report/run/99999", json={"finished_at": "2026-08-17T01:00:00"})
+    resp = client.post(
+        f"/report/run/99999", json={"data": {"finished_at": "2026-08-17T01:00:00"}}
+    )
     assert resp.status_code == 404
 
 

@@ -76,6 +76,12 @@ jobs:
           python3 - <<'EOF'
           import json, os, urllib.request, urllib.error
           T = os.environ["RUNPOD_API_KEY"]
+          # mflux-runner/mflux-runner-health are archived (_deprecated/) --
+          # the GPU Runner is now a plain Docker image managed directly via
+          # RunPod's API, not a Flash resource, so `flash deploy` no longer
+          # defines or creates them. Only mflux-orchestrator is a live Flash
+          # resource; the set stays as a defensive no-op for the other two
+          # in case a stray/duplicate with those names ever reappears.
           NAMES = {"mflux-runner", "mflux-runner-health", "mflux-orchestrator"}
 
           def api(path, method="GET"):
@@ -104,9 +110,25 @@ jobs:
         run: uv run flash deploy
 
       - name: Post-deploy health check
+        # mflux-runner/mflux-runner-health are archived (_deprecated/) -- the
+        # GPU Runner is a Docker image managed outside Flash now, so there's
+        # nothing for `flash deploy` to have just created for it. Only the
+        # Orchestrator is checked here.
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-        run: uv run python scripts/check_runner_health.py
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          T = os.environ["RUNPOD_API_KEY"]
+          req = urllib.request.Request("https://rest.runpod.io/v1/endpoints")
+          req.add_header("Authorization", f"Bearer {T}")
+          with urllib.request.urlopen(req, timeout=30) as r:
+              endpoints = json.loads(r.read())
+          matches = [e for e in endpoints if e.get("name") == "mflux-orchestrator"]
+          if not matches:
+              raise SystemExit("No deployed endpoint named 'mflux-orchestrator' found")
+          print(f"mflux-orchestrator deployed: {matches[0]['id']}")
+          EOF
 
   undeploy:
     if: github.event.inputs.action == 'undeploy'
