@@ -22,7 +22,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /app
 
-RUN uv pip install --no-cache pip runpod httpx hf yaml
+RUN uv pip install --no-cache pip runpod httpx hf pyyaml
 RUN uv pip install --no-cache mlx[cuda13]
 RUN uv pip install --no-cache mflux
 
