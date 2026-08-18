@@ -58,10 +58,36 @@ jobs:
         # account. `|| true` on each is now safe to mean "not found" only,
         # since the credentials step above already ruled out an auth
         # failure; a first-ever deploy has nothing to remove yet either way.
+        # Deletes ALL endpoints matching each name via the REST API, not
+        # `flash undeploy` -- confirmed 2026-08-18 that `flash undeploy <name>`
+        # removes only ONE endpoint per invocation, so once duplicates exist it
+        # leaves the rest behind. Two "successful" deploys had accumulated 7
+        # endpoints (3 orchestrators, 2 runners, 2 health) that way.
         run: |
-          uv run flash undeploy mflux-runner --force || true
-          uv run flash undeploy mflux-runner-health --force || true
-          uv run flash undeploy mflux-orchestrator --force || true
+          python3 - <<'EOF'
+          import json, os, urllib.request, urllib.error
+          T = os.environ["RUNPOD_API_KEY"]
+          NAMES = {"mflux-runner", "mflux-runner-health", "mflux-orchestrator"}
+
+          def api(path, method="GET"):
+              req = urllib.request.Request(f"https://rest.runpod.io/v1{path}", method=method)
+              req.add_header("Authorization", f"Bearer {T}")
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.loads(r.read()) if r.status != 204 else None
+
+          endpoints = api("/endpoints") or []
+          targets = [e for e in endpoints if e.get("name") in NAMES]
+          print(f"{len(endpoints)} endpoints, {len(targets)} matching ours")
+          for e in targets:
+              try:
+                  api(f"/endpoints/{e['id']}", method="DELETE")
+                  print(f"  deleted {e['name']} ({e['id']})")
+              except urllib.error.HTTPError as exc:
+                  # 404 = already gone (fine). Anything else is a real failure
+                  # and must not be swallowed, or we'd deploy on top of leftovers.
+                  if exc.code != 404:
+                      raise SystemExit(f"delete failed for {e['id']}: {exc.code} {exc.read()[:200]}")
+          EOF
 
       - name: flash deploy
         env:
