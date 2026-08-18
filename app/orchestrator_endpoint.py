@@ -146,11 +146,12 @@ orchestrator = Endpoint(
         "RUNNER_ENDPOINT_ID": "jx45e9ewmop06z",
         # DO Spaces outbox (app/outbox.py) -- KEY/SECRET are real credentials,
         # so (like HF_TOKEN above) they're RunPod Secret references, not
-        # literal values, to avoid committing them to git. Create these via
-        # the RunPod console (Settings -> Secrets) before deploying:
-        # RUNPOD_SECRET_DO_SPACES_KEY, RUNPOD_SECRET_DO_SPACES_SECRET.
-        "DO_SPACES_KEY": "{{ RUNPOD_SECRET_DO_SPACES_KEY }}",
-        "DO_SPACES_SECRET": "{{ RUNPOD_SECRET_DO_SPACES_SECRET }}",
+        # literal values, to avoid committing them to git. Named
+        # DO_SPACES_KEY_2/DO_SPACES_SECRET_2 in the RunPod console (Settings
+        # -> Secrets), not DO_SPACES_KEY/SECRET -- match whatever's actually
+        # there, since RunPod's {{ RUNPOD_SECRET_<name> }} lookup is exact.
+        "DO_SPACES_KEY": "{{ RUNPOD_SECRET_DO_SPACES_KEY_2 }}",
+        "DO_SPACES_SECRET": "{{ RUNPOD_SECRET_DO_SPACES_SECRET_2 }}",
         "DO_SPACES_REGION": "nyc3",
         "DO_SPACES_ENDPOINT": "https://nyc3.digitaloceanspaces.com",
         "DO_SPACES_BUCKET": "mflux-runpod",
