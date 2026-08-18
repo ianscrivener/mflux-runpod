@@ -1,17 +1,44 @@
-# Status (2026-08-18)
+# Status (2026-08-18, later same day)
 
-Flash path works end-to-end (real Fibo bf16 built + uploaded to HF).
-Orchestrator deployed; SQLite persistence across worker scale-to-zero is
-PROVEN (a run row survived worker death + a full redeploy). Swagger is live
-at `https://<endpoint-id>.api.runpod.ai/docs` — needs an
+**Architecture decision: the Flash GPU Runner path is retired.** `app/
+runner_endpoint.py` and `scripts/check_runner_health.py` are archived to
+`_deprecated/` (not deleted — kept for reference). The GPU Runner going
+forward is the plain Docker image (`dockerFiles/runner.dockerfile` +
+`runner_handler.py`) deployed directly via RunPod's API, not a Flash
+`@Endpoint`. `mflux-runner`/`mflux-runner-health` no longer exist as Flash
+resources; `.github/workflows/deploy.yml` only manages `mflux-orchestrator`
+now (clean-slate step still defensively matches the old names in case a
+stray one reappears; post-deploy health check now pings the orchestrator
+itself instead of the archived `mflux-runner-health`).
+
+Why: the Docker path bakes mlx+mflux directly into the image (no per-job
+`uv pip install` — see `dockerFiles/runner_handler.py`'s `_apply_overrides`),
+avoids Flash's `--only-binary=:all:` cross-compile constraint that forced
+runtime pip installs on the Flash path, and supports per-job
+`force_mlx_ver`/`force_mflux_repo` overrides for testing. Proven live
+end-to-end (2026-08-18): Fibo q8 built + uploaded via the real
+Orchestrator→Runner→callback loop (`dispatch_trigger` in `app/generate.py`,
+opt-in via `dispatch: true` on `/generate`).
+
+**Orchestrator dispatch is now wired** (was ToDo task 7's dry-run stub).
+`/generate` and `/generate_all` default to dry-run still (`dispatch: false`)
+— `dispatch: true` creates/reuses the series' network volume
+(`app.runpod_volumes`) and dispatches one real RunPod job per quant to
+`RUNNER_ENDPOINT_ID`. Runner→Orchestrator callback needed two fixes to
+prove live: (1) the callback POST had no `Authorization` header — RunPod's
+LB endpoints 401 every path without one; (2) the plain-FastAPI
+`/report/run/{run_id}` route (`app/main.py`) expected an unwrapped body,
+but the callback (and Flash's own LB routing convention) sends
+`{"data": {...}}` — fixed by wrapping `app/main.py`'s route in the same
+envelope Flash's `orchestrator_endpoint.py` already expected, so both
+Orchestrator entrypoints share one wire contract.
+
+Swagger is live at `https://<endpoint-id>.api.runpod.ai/docs` — needs an
 `Authorization: Bearer <RUNPOD_API_KEY>` header (RunPod authenticates LB
 endpoints at the edge; every path 401s without it, including `/ping`).
 
-Docker runner path: PARTIALLY proven. Image builds+pushes to GHCR, container
-starts on CUDA 13.0.1, GPU healthy, handler registers, container-start
-`uv pip install` of mlx/mflux succeeds, HF download begins. NOT proven: a
-completed quantize+upload — two attempts ended for environmental reasons (an
-HF Xet transfer error, then the endpoint being deleted mid-job).
+SQLite persistence across worker scale-to-zero is PROVEN (a run row
+survived worker death + a full redeploy).
 
 # Tasks
 

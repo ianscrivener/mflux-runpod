@@ -124,8 +124,20 @@ class RunStatusCallback(BaseModel):
     quant_builds: list[QuantBuildReport] = []
 
 
+class RunStatusCallbackEnvelope(BaseModel):
+    """Wire format is {"data": {...}} at the top level, not a bare
+    RunStatusCallback -- this matches app/orchestrator_endpoint.py's Flash
+    load-balanced route (which requires args wrapped under a key matching
+    its param name, confirmed live), so dockerFiles/runner_handler.py and
+    app/runner_endpoint.py can POST the identical payload shape to either
+    Orchestrator entrypoint without knowing which one they're talking to."""
+
+    data: RunStatusCallback
+
+
 @app.post("/report/run/{run_id}")
-def report_run_callback(run_id: int, callback: RunStatusCallback):
+def report_run_callback(run_id: int, envelope: RunStatusCallbackEnvelope):
+    callback = envelope.data
     if run_detail(run_id) is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
 
