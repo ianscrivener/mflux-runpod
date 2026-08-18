@@ -22,10 +22,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /app
 
-RUN pwd \
-    && uv venv \
-    && source .venv/bin/activate \
-    && uv init \
+RUN uv init \
     && uv add --upgrade --no-cache pip \
     && uv add --no-cache runpod httpx hf yaml
 
