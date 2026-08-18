@@ -12,6 +12,7 @@ from app.models_missing import compute_missing, load_configs, load_overrides
 from app.models_supported import load_models_supported
 from app.report import (
     add_quant_build,
+    clear_runs,
     dump_all,
     recent_runs,
     run_detail,
@@ -247,6 +248,16 @@ def report_dump():
     """Full raw JSON dump of every table (runs + quant_builds +
     series_volumes + summary). Unlimited by design, unlike /report."""
     return dump_all()
+
+
+@app.delete("/report", summary="Clear the generation log (runs + quant_builds)")
+def report_clear():
+    """Deletes every runs + quant_builds row -- schema untouched, and does
+    NOT delete series_volumes (those track real RunPod resources, not log
+    entries). Irreversible; there's no confirmation step, so treat this as
+    intentionally blunt maintenance tooling, not something to wire up to a
+    casual UI button."""
+    return clear_runs()
 
 
 @app.get("/health")

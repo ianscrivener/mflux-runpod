@@ -297,6 +297,19 @@ async def report_dump() -> dict:
     return dump_all()
 
 
+@orchestrator.delete("/report")
+async def report_clear() -> dict:
+    """Deletes every runs + quant_builds row -- schema untouched, and does
+    NOT delete series_volumes (those track real RunPod resources, not log
+    entries). Irreversible; no confirmation step -- intentionally blunt
+    maintenance tooling."""
+    from app.db import init_db
+    from app.report import clear_runs
+
+    init_db()
+    return clear_runs()
+
+
 @orchestrator.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

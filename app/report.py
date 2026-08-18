@@ -204,6 +204,19 @@ def dump_all() -> dict:
     }
 
 
+def clear_runs() -> dict:
+    """Delete every runs + quant_builds row (schema untouched). Does NOT
+    touch series_volumes -- those track real RunPod resources that still
+    exist regardless of the generation log, and deleting the row without
+    deleting the actual volume would just orphan it from tracking. Returns
+    the counts deleted, for confirmation."""
+    with get_connection() as conn:
+        quant_builds_deleted = conn.execute("DELETE FROM quant_builds").rowcount
+        runs_deleted = conn.execute("DELETE FROM runs").rowcount
+        conn.commit()
+    return {"runs_deleted": runs_deleted, "quant_builds_deleted": quant_builds_deleted}
+
+
 def summary() -> dict:
     """Aggregate stats: run counts by status, avg build/upload duration by quant."""
     with get_connection() as conn:
