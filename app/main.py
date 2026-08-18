@@ -194,8 +194,3 @@ def report_dump():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/ping")
-def ping():
-    return {"ping": "pong"}

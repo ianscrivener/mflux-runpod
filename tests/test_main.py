@@ -20,9 +20,8 @@ def client():
         yield c
 
 
-def test_health_and_ping(client):
+def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
-    assert client.get("/ping").json() == {"ping": "pong"}
 
 
 def test_models_supported(client):
