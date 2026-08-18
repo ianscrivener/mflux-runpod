@@ -25,3 +25,12 @@ data/models_hf.json
 # locally) and previously aborted every `flash deploy` in the project until
 # excluded, same issue as the old mflux-save.py.
 dockerFiles/
+
+# Same reasoning as dockerFiles/ above: Flash's resource scanner walks
+# EVERY .py file under project_dir (rglob("*.py")), regardless of which
+# directory it's in -- moving app/runner_endpoint.py here does NOT stop
+# `flash deploy` from finding and redeploying its @Endpoint definitions
+# unless this directory is also excluded via .gitignore (confirmed live,
+# 2026-08-18: mflux-runner/mflux-runner-health came back after the move,
+# before this entry was added).
+_deprecated/
