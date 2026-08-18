@@ -53,6 +53,72 @@ def dry_run_trigger(model_series: str, run_id: int, plan: dict) -> dict:
     return {"dispatched": False, "reason": "dry_run", "run_id": run_id, "plan": plan}
 
 
+def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
+    """Real trigger_fn: creates/reuses the series' ephemeral network volume,
+    then dispatches one async RunPod job per quant in plan["quants_to_build"]
+    to the Docker Runner (dockerFiles/runner_handler.py), each carrying run_id
+    so it reports back via POST /report/run/{run_id}. Returns immediately once
+    jobs are submitted — does not wait for a build to finish.
+
+    Requires RUNNER_ENDPOINT_ID (the Docker Runner's serverless endpoint id)
+    and RUNPOD_API_KEY in the environment. The Runner endpoint itself must
+    have ORCHESTRATOR_BASE_URL + RUNPOD_API_KEY in ITS OWN env for the
+    callback (see dockerFiles/runner_handler.py) and must be pinned to the
+    same datacenter as the volume create_volume() creates (network volumes
+    are datacenter-locked — see app.runpod_volumes).
+    """
+    import os
+
+    import httpx
+
+    from app.runpod_volumes import create_volume
+
+    runner_endpoint_id = os.environ["RUNNER_ENDPOINT_ID"]
+    api_key = os.environ["RUNPOD_API_KEY"]
+
+    volume = create_volume(model_series)
+    config = load_configs()[model_series]
+
+    # force_mflux_repo is only set for a non-default repo/branch request —
+    # the Runner's baked-in mflux (mflux-community@main) covers the default
+    # case with zero pip installs at job time (see runner_handler.py's
+    # _apply_overrides). "@branch" matches pip's own git-VCS install syntax.
+    force_mflux_repo = None
+    if plan["mflux_repo"] != DEFAULT_MFLUX_REPO or plan["mflux_branch"] != DEFAULT_MFLUX_BRANCH:
+        force_mflux_repo = f"{plan['mflux_repo']}@{plan['mflux_branch']}"
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    dispatched = []
+    with httpx.Client(timeout=30.0) as client:
+        for quant in plan["quants_to_build"]:
+            job_input = {
+                "config_stem": model_series,
+                "config": config,
+                "quant": quant,
+                "volume_root": "/runpod-volume",
+                "force_hf_overwrite": plan["force_hf_overwrite"],
+                "already_published": False,
+                "run_id": run_id,
+            }
+            if force_mflux_repo is not None:
+                job_input["force_mflux_repo"] = force_mflux_repo
+
+            response = client.post(
+                f"https://api.runpod.ai/v2/{runner_endpoint_id}/run",
+                headers=headers,
+                json={"input": job_input},
+            )
+            response.raise_for_status()
+            dispatched.append({"quant": quant, "job_id": response.json()["id"]})
+
+    return {
+        "dispatched": True,
+        "run_id": run_id,
+        "volume_id": volume["id"],
+        "jobs": dispatched,
+    }
+
+
 def generate_one(
     model_stem: str,
     quants: list[str] | None = None,

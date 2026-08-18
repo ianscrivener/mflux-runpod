@@ -190,6 +190,11 @@ def handler(event: dict) -> dict:
             ],
         }
         url = f"{orchestrator_base_url}/report/run/{run_id}"
+        # RunPod authenticates Flash LB endpoints at the edge -- every path
+        # 401s without this, including /health (confirmed live, 2026-08-18).
+        # Reuse this worker's own RUNPOD_API_KEY as the bearer token: it's
+        # the same account/key the Orchestrator's own endpoint accepts.
+        headers = {"Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY', '')}"}
         last_exc = None
         for attempt in range(3):
             try:
@@ -197,7 +202,7 @@ def handler(event: dict) -> dict:
                     # Flash LB routes take the handler's arg wrapped in
                     # {"data": ...} -- confirmed live against
                     # orchestrator_endpoint.py's report_run_callback.
-                    response = client.post(url, json={"data": payload})
+                    response = client.post(url, json={"data": payload}, headers=headers)
                     response.raise_for_status()
                 callback_delivered = True
                 break

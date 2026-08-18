@@ -99,13 +99,14 @@ async def models_missing() -> dict:
 @orchestrator.post("/generate")
 async def generate(data: dict) -> dict:
     from app.db import init_db
-    from app.generate import UnknownModelError, generate_one
+    from app.generate import UnknownModelError, dispatch_trigger, dry_run_trigger, generate_one
 
     # No FastAPI lifespan hook in Flash's load-balanced route mode (unlike
     # app/main.py), so each DB-touching route ensures the schema exists
     # itself. init_db() is CREATE TABLE IF NOT EXISTS -- cheap, idempotent,
     # safe to call on every request.
     init_db()
+    trigger_fn = dispatch_trigger if data.get("dispatch", False) else dry_run_trigger
     try:
         return generate_one(
             data["config_stem"],
@@ -113,18 +114,21 @@ async def generate(data: dict) -> dict:
             mflux_repo=data.get("mflux_repo"),
             mflux_branch=data.get("mflux_branch"),
             force_hf_overwrite=data.get("force_hf_overwrite", False),
+            trigger_fn=trigger_fn,
         )
     except UnknownModelError as exc:
         return {"error": str(exc)}
 
 
 @orchestrator.post("/generate_all")
-async def generate_all_route() -> dict:
+async def generate_all_route(data: dict | None = None) -> dict:
     from app.db import init_db
-    from app.generate import generate_all
+    from app.generate import dispatch_trigger, dry_run_trigger, generate_all
 
     init_db()
-    return {"runs": generate_all()}
+    dispatch = (data or {}).get("dispatch", False)
+    trigger_fn = dispatch_trigger if dispatch else dry_run_trigger
+    return {"runs": generate_all(trigger_fn=trigger_fn)}
 
 
 @orchestrator.post("/report/run/{run_id}")

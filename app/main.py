@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from app.db import init_db
-from app.generate import UnknownModelError, generate_all, generate_one
+from app.generate import UnknownModelError, dry_run_trigger, generate_all, generate_one
 from app.models_hf import load_models_hf, update_models_hf
 from app.models_missing import compute_missing, load_configs, load_overrides
 from app.models_supported import load_models_supported
@@ -60,14 +60,18 @@ class GenerateRequest(BaseModel):
     mflux_branch: str | None = None
     quants: list[str] | None = None
     force_hf_overwrite: bool = False
+    dispatch: bool = False  # opt-in: fire a real, billed GPU job. False = dry-run only.
 
 
 @app.post("/generate")
 def generate(request: GenerateRequest):
-    """Plan+record one model's generation run. NOTE: no live GPU Runner is
-    deployed yet (see ToDo.md task 14/15) — this always dry-runs (plans and
-    records a `runs` row only) without provisioning storage or dispatching a
-    real, billed GPU job."""
+    """Plan+record one model's generation run. Dry-runs by default (plans
+    and records a `runs` row only, no RunPod API calls) — pass
+    dispatch=true to actually create/reuse the series' volume and dispatch
+    real GPU jobs to the Runner (see app/generate.py::dispatch_trigger)."""
+    from app.generate import dispatch_trigger
+
+    trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
     try:
         return generate_one(
             request.config_stem,
@@ -75,16 +79,24 @@ def generate(request: GenerateRequest):
             mflux_repo=request.mflux_repo,
             mflux_branch=request.mflux_branch,
             force_hf_overwrite=request.force_hf_overwrite,
+            trigger_fn=trigger_fn,
         )
     except UnknownModelError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+class GenerateAllRequest(BaseModel):
+    dispatch: bool = False
+
+
 @app.post("/generate_all")
-def generate_all_endpoint():
+def generate_all_endpoint(request: GenerateAllRequest = GenerateAllRequest()):
     """Plan+record a run for every series /models_missing reports. Same
-    dry-run safety note as /generate — no real GPU work is dispatched yet."""
-    return {"runs": generate_all()}
+    dispatch opt-in as /generate — defaults to dry-run."""
+    from app.generate import dispatch_trigger
+
+    trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
+    return {"runs": generate_all(trigger_fn=trigger_fn)}
 
 
 class QuantBuildReport(BaseModel):
