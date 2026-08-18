@@ -170,6 +170,18 @@ async def report(model_series: str | None = None, run_id: int | None = None, lim
     return {"runs": recent_runs(limit), "summary": summary()}
 
 
+@orchestrator.get("/report/dump")
+async def report_dump() -> dict:
+    """Full raw JSON dump of every table -- runs (each with quant_builds),
+    series_volumes, plus summary aggregates. Unlimited by design, unlike
+    /report which paginates via `limit`."""
+    from app.db import init_db
+    from app.report import dump_all
+
+    init_db()
+    return dump_all()
+
+
 @orchestrator.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

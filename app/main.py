@@ -12,6 +12,7 @@ from app.models_missing import compute_missing, load_configs, load_overrides
 from app.models_supported import load_models_supported
 from app.report import (
     add_quant_build,
+    dump_all,
     recent_runs,
     run_detail,
     runs_for_series,
@@ -145,6 +146,13 @@ def report(model_series: str | None = None, run_id: int | None = None, limit: in
     if model_series is not None:
         return {"runs": runs_for_series(model_series, limit)}
     return {"runs": recent_runs(limit), "summary": summary()}
+
+
+@app.get("/report/dump")
+def report_dump():
+    """Full raw JSON dump of every table (runs + quant_builds +
+    series_volumes + summary). Unlimited by design, unlike /report."""
+    return dump_all()
 
 
 @app.get("/health")

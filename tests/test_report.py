@@ -143,3 +143,20 @@ def test_update_run_status_from_children_unknown_run_raises():
 def test_create_run_defaults_expected_quants_to_zero():
     run_id = create_run("Fibo", "2026-08-17T00:00:00")
     assert run_detail(run_id)["expected_quants"] == 0
+
+
+def test_dump_all_returns_runs_with_builds_and_counts(tmp_path, monkeypatch):
+    """/report/dump's backing function must return every run with its nested
+    quant_builds, plus counts and summary -- it's the "give me everything"
+    report, unlike recent_runs() which is limited."""
+    from app.report import add_quant_build, create_run, dump_all
+
+    rid = create_run(model_series="Fibo", started_at="2026-08-18T00:00:00Z", expected_quants=2)
+    add_quant_build(rid, "q8", status="uploaded", build_duration_s=12.5)
+    add_quant_build(rid, "bf16", status="failed")
+
+    d = dump_all()
+
+    assert d["counts"] == {"runs": 1, "quant_builds": 2, "series_volumes": 0}
+    assert [b["quant"] for b in d["runs"][0]["quant_builds"]] == ["q8", "bf16"]
+    assert "summary" in d and d["generated_at"]
