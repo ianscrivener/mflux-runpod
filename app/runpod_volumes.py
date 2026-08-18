@@ -150,6 +150,49 @@ def get_volume(volume_id: str, client: httpx.Client | None = None) -> dict:
     return response.json()
 
 
+def list_active_series_volumes(client: httpx.Client | None = None) -> list[dict]:
+    """List every ephemeral per-series volume currently on record (deleted_at
+    IS NULL in series_volumes), enriched with live size/datacenter from
+    RunPod. These are build-scratch volumes, not the model store itself —
+    build_and_upload_one_quant deletes each quant's local build directory
+    right after a successful upload, so a listed volume is usually either
+    empty or holding exactly one in-progress build, not a catalog of
+    finished models (those live on Hugging Face; see app.models_hf).
+
+    A volume whose RunPod resource no longer exists (deleted outside this
+    app, or a stale DB row) is still listed with its DB fields but
+    runpod=None, rather than raising — a listing endpoint shouldn't 500 over
+    one stale entry."""
+    from app.db import get_connection
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT model_series, volume_id, volume_name, created_at "
+            "FROM series_volumes WHERE deleted_at IS NULL ORDER BY created_at DESC"
+        ).fetchall()
+
+    client = client or _default_client()
+    result = []
+    for row in rows:
+        entry = {
+            "model_series": row["model_series"],
+            "volume_id": row["volume_id"],
+            "volume_name": row["volume_name"],
+            "created_at": row["created_at"],
+            "runpod": None,
+        }
+        try:
+            volume = get_volume(row["volume_id"], client=client)
+            entry["runpod"] = {
+                "size_gb": volume.get("size"),
+                "data_center_id": volume.get("dataCenterId"),
+            }
+        except httpx.HTTPStatusError:
+            pass
+        result.append(entry)
+    return result
+
+
 def delete_volume(volume_id: str, client: httpx.Client | None = None) -> None:
     """Delete a model series' volume once every quant is uploaded and
     verified. Also marks the matching series_volumes row as deleted (if one

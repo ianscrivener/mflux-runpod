@@ -96,6 +96,17 @@ async def models_missing() -> dict:
     return compute_missing(configs, hf_manifest, overrides)
 
 
+@orchestrator.get("/model_store")
+async def model_store() -> dict:
+    """List currently-active ephemeral per-series build volumes -- see
+    app.runpod_volumes.list_active_series_volumes's docstring for why this
+    is a build-scratch view, not the finished-model catalog (that's
+    /models_hf)."""
+    from app.runpod_volumes import list_active_series_volumes
+
+    return {"volumes": list_active_series_volumes()}
+
+
 @orchestrator.post("/generate")
 async def generate(data: dict) -> dict:
     from app.db import init_db

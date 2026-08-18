@@ -53,6 +53,18 @@ def models_missing():
     return compute_missing(configs, hf_manifest, overrides)
 
 
+@app.get("/model_store")
+def model_store():
+    """List currently-active ephemeral per-series build volumes (NOT the
+    model store itself -- finished quants live on Hugging Face, see
+    /models_hf. These are RunPod build-scratch volumes; see
+    app.runpod_volumes.list_active_series_volumes's docstring for why a
+    listed volume is usually empty or holding one in-progress build)."""
+    from app.runpod_volumes import list_active_series_volumes
+
+    return {"volumes": list_active_series_volumes()}
+
+
 class GenerateRequest(BaseModel):
     hf_model_name: str | None = None  # informational only; config_stem resolves the config
     config_stem: str
