@@ -27,6 +27,11 @@ RUN uv venv /opt/venv
 RUN uv pip install --no-cache pip runpod httpx huggingface_hub pyyaml
 RUN uv pip install --no-cache mlx[cuda13]
 RUN uv pip install --no-cache mflux
+# mflux's own pyproject.toml pins mlx<0.32.0 (works around a CUDA/Linux
+# quantized_matmul bug in mlx>=0.32.0 -- see dockerFiles/runner_handler.py's
+# MLX_VERSION_RANGE comment). This forces the newer pin back on top,
+# overriding that constraint at build time.
+RUN uv pip install --no-cache "mlx[cuda13]==0.32.0"
 
 
 
