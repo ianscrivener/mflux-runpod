@@ -1,5 +1,7 @@
 """Orchestrator API (PRD: (1) Orchestrator - CPU)."""
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -21,11 +23,39 @@ from app.report import (
     update_run_status_from_children,
 )
 
+logger = logging.getLogger(__name__)
+
+OUTBOX_POLL_INTERVAL_S = 30
+
+
+async def _outbox_poll_loop() -> None:
+    """Background task: process the DO Spaces outbox every
+    OUTBOX_POLL_INTERVAL_S seconds so a job's result gets applied whenever
+    this process happens to be running, without needing a direct callback
+    at the exact moment the job finishes (see app/outbox.py)."""
+    from app.outbox import OutboxConfigError, process_pending
+
+    while True:
+        try:
+            result = process_pending()
+            if result["processed"] or result["errors"]:
+                logger.info("outbox poll: %s", result)
+        except OutboxConfigError:
+            # Not configured (e.g. local dev without DO_SPACES_* set) --
+            # don't retry every 30s forever, just stop polling.
+            logger.warning("DO Spaces outbox not configured; background polling disabled")
+            return
+        except Exception:  # noqa: BLE001 - one bad poll shouldn't kill the loop
+            logger.exception("outbox poll failed")
+        await asyncio.sleep(OUTBOX_POLL_INTERVAL_S)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    poll_task = asyncio.create_task(_outbox_poll_loop())
     yield
+    poll_task.cancel()
 
 
 app = FastAPI(title="mflux-runpod orchestrator", lifespan=lifespan)
@@ -258,6 +288,21 @@ def report_clear():
     intentionally blunt maintenance tooling, not something to wire up to a
     casual UI button."""
     return clear_runs()
+
+
+@app.post("/outbox/poll", summary="Process the DO Spaces outbox right now")
+def outbox_poll():
+    """Process every pending result currently sitting in the DO Spaces
+    outbox immediately, instead of waiting for the background loop's next
+    tick (every OUTBOX_POLL_INTERVAL_S seconds -- see app/outbox.py).
+    Useful for testing, or forcing an immediate catch-up after being
+    offline for a while."""
+    from app.outbox import OutboxConfigError, process_pending
+
+    try:
+        return process_pending()
+    except OutboxConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/health")

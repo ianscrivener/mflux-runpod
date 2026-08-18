@@ -24,7 +24,7 @@ WORKDIR /app
 
 RUN uv venv /opt/venv
 
-RUN uv pip install --no-cache pip runpod httpx huggingface_hub pyyaml
+RUN uv pip install --no-cache pip runpod httpx huggingface_hub pyyaml boto3
 
 # Baked-in default mlx + mflux -- must match runner_handler.py's
 # BAKED_MLX_VERSION / BAKED_MFLUX_TARGET exactly, since the handler only
@@ -45,7 +45,7 @@ COPY dockerFiles/runner_handler.py ./
 # Fail loudly at build time if the venv/deps aren't actually importable --
 # a silently-broken image otherwise only surfaces as a worker that starts,
 # reports "ready", and never picks up a job (no container logs at all).
-RUN python3 -c "import runpod, httpx, huggingface_hub, yaml; print('handler deps ok')" \
+RUN python3 -c "import runpod, httpx, huggingface_hub, yaml, boto3; print('handler deps ok')" \
     && uv --version
 
 CMD ["python3", "-u", "runner_handler.py"]

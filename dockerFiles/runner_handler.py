@@ -25,13 +25,13 @@ Job input shape (event["input"]):
     "force_mflux_repo": str,    # optional, "https://.../mflux.git@branch" -- overrides the baked mflux
     "force_hf_overwrite": bool,   # optional, default False
     "already_published": bool,    # optional, default False
-    "run_id": int | None,         # optional, enables the Orchestrator callback
+    "run_id": int | None,         # optional, enables the DO Spaces outbox result delivery
   }
 
 Environment (set at container/endpoint deploy time, not per-job -- same
 SSRF/credential-leak reasoning as app/runner_endpoint.py's docstring):
-  HF_TOKEN              RunPod Secret
-  ORCHESTRATOR_BASE_URL Orchestrator's base URL, for the /report/run/{id} callback
+  HF_TOKEN                                          RunPod Secret
+  DO_SPACES_KEY/SECRET/ENDPOINT/REGION/BUCKET        DO Spaces outbox creds (see app/outbox.py)
 """
 
 import os
@@ -41,7 +41,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
 import runpod
 from huggingface_hub import HfApi
 
@@ -173,10 +172,15 @@ def handler(event: dict) -> dict:
 
     build_duration_s = time.monotonic() - started
 
-    orchestrator_base_url = os.environ.get("ORCHESTRATOR_BASE_URL")
-    callback_delivered = False
-    callback_error = None
-    if orchestrator_base_url and run_id is not None:
+    # Durable outbox (DO Spaces) instead of a direct HTTP callback -- the
+    # Orchestrator polls this on its own schedule, so it doesn't need to be
+    # reachable at the exact moment this job finishes (2026-08-18 design
+    # change: the old direct-POST callback required the Orchestrator to be
+    # online right now, which doesn't hold if it's ever run somewhere that
+    # isn't always-on). See app/outbox.py.
+    outbox_delivered = False
+    outbox_error = None
+    if run_id is not None:
         payload = {
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "error": error,
@@ -189,37 +193,21 @@ def handler(event: dict) -> dict:
                 }
             ],
         }
-        url = f"{orchestrator_base_url}/report/run/{run_id}"
-        # RunPod authenticates Flash LB endpoints at the edge -- every path
-        # 401s without this, including /health (confirmed live, 2026-08-18).
-        # Reuse this worker's own RUNPOD_API_KEY as the bearer token: it's
-        # the same account/key the Orchestrator's own endpoint accepts.
-        headers = {"Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY', '')}"}
-        last_exc = None
-        for attempt in range(3):
-            try:
-                with httpx.Client(timeout=30.0) as client:
-                    # Flash LB routes take the handler's arg wrapped in
-                    # {"data": ...} -- confirmed live against
-                    # orchestrator_endpoint.py's report_run_callback.
-                    response = client.post(url, json={"data": payload}, headers=headers)
-                    response.raise_for_status()
-                callback_delivered = True
-                break
-            except httpx.HTTPError as exc:
-                last_exc = exc
-                if attempt < 2:
-                    time.sleep(2**attempt)
-        if not callback_delivered:
-            callback_error = str(last_exc)
+        try:
+            from app.outbox import put_result
+
+            put_result(run_id, quant, payload)
+            outbox_delivered = True
+        except Exception as exc:  # noqa: BLE001 - report failure back, don't crash the job
+            outbox_error = str(exc)
 
     return {
         "config_stem": config_stem,
         "quant": quant,
         "status": build_status,
         "error": error,
-        "callback_delivered": callback_delivered,
-        "callback_error": callback_error,
+        "outbox_delivered": outbox_delivered,
+        "outbox_error": outbox_error,
     }
 
 

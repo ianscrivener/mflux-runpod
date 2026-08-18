@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Local secrets -- never committed
+.env
+
 HF_CACHE
 
 # Generated at runtime, not source
@@ -47,3 +50,4 @@ z_*.*
 # to recreate it) -- not just a warning like app/runner.py's dynamic-import
 # notice, a hard deploy failure. None of these are Flash resources anyway.
 scripts/
+zz_generate.sh

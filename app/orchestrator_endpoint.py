@@ -124,7 +124,7 @@ orchestrator = Endpoint(
     workers=(0, 1),
     idle_timeout=60,
     datacenter=ORCHESTRATOR_DATACENTER,
-    dependencies=["pyyaml", "httpx"],
+    dependencies=["pyyaml", "httpx", "boto3"],
     volume=NetworkVolume(name="mflux-orchestrator", datacenter=ORCHESTRATOR_DATACENTER, size=10),
     env={
         "REPORT_DB_PATH": "/runpod-volume/reports.sqlite",
@@ -144,6 +144,16 @@ orchestrator = Endpoint(
         # update this if the Runner endpoint is ever recreated (its id
         # changes each time, unlike this Flash-managed resource).
         "RUNNER_ENDPOINT_ID": "jx45e9ewmop06z",
+        # DO Spaces outbox (app/outbox.py) -- KEY/SECRET are real credentials,
+        # so (like HF_TOKEN above) they're RunPod Secret references, not
+        # literal values, to avoid committing them to git. Create these via
+        # the RunPod console (Settings -> Secrets) before deploying:
+        # RUNPOD_SECRET_DO_SPACES_KEY, RUNPOD_SECRET_DO_SPACES_SECRET.
+        "DO_SPACES_KEY": "{{ RUNPOD_SECRET_DO_SPACES_KEY }}",
+        "DO_SPACES_SECRET": "{{ RUNPOD_SECRET_DO_SPACES_SECRET }}",
+        "DO_SPACES_REGION": "nyc3",
+        "DO_SPACES_ENDPOINT": "https://nyc3.digitaloceanspaces.com",
+        "DO_SPACES_BUCKET": "mflux-runpod",
     },
 )
 
@@ -308,6 +318,25 @@ async def report_clear() -> dict:
 
     init_db()
     return clear_runs()
+
+
+@orchestrator.post("/outbox/poll")
+async def outbox_poll() -> dict:
+    """Process every pending result currently sitting in the DO Spaces
+    outbox right now (see app/outbox.py). Unlike app/main.py's version,
+    there's no automatic background loop here -- Flash's LB lifespan is
+    auto-generated (just logs start/stop), not something this module
+    controls, and request-driven ephemeral workers aren't a good fit for
+    a persistent poll loop anyway. This route needs an external trigger
+    (cron, manual call, etc.) to actually run periodically."""
+    from app.db import init_db
+    from app.outbox import OutboxConfigError, process_pending
+
+    init_db()
+    try:
+        return process_pending()
+    except OutboxConfigError as exc:
+        return {"error": str(exc)}
 
 
 @orchestrator.get("/health")
