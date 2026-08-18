@@ -11,7 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/nccl/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cufft/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+# uv install - Download the latest installer
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+
+# uv install - Run the installer then remove it
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+
+# uv install - Ensure the installed binary is on the `PATH`
+ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /app
 
