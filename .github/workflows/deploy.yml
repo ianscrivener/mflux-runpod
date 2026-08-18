@@ -130,6 +130,18 @@ jobs:
           print(f"mflux-orchestrator deployed: {matches[0]['id']}")
           EOF
 
+      - name: Sync Docker Runner's ORCHESTRATOR_BASE_URL
+        # mflux-orchestrator gets a new endpoint id/URL on every deploy above
+        # (Flash always creates new, never updates in place), but the Docker
+        # GPU Runner (mflux-runner-docker-test) is a manually-managed
+        # endpoint whose ORCHESTRATOR_BASE_URL env var doesn't auto-track
+        # that. Confirmed live, 2026-08-18: a stale value here makes every
+        # Runner->Orchestrator callback fail with a DNS resolution error,
+        # silently stranding run records at status "running" forever.
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        run: uv run python scripts/sync_runner_orchestrator_url.py
+
   undeploy:
     if: github.event.inputs.action == 'undeploy'
     runs-on: ubuntu-latest
