@@ -119,11 +119,24 @@ def process_pending() -> dict:
     so it can be inspected rather than silently lost -- reported in
     `errors` instead. run_id is parsed from the key itself so even a
     malformed payload still identifies which run to flag."""
+    from botocore.exceptions import BotoCoreError, ClientError
+
     from app.report import add_quant_build, update_run_status_from_children
+
+    try:
+        pending = list_pending()
+    except (ClientError, BotoCoreError) as exc:
+        # Credentials are "set" (OutboxConfigError doesn't fire) but wrong --
+        # e.g. an unsubstituted RunPod Secret placeholder like literal
+        # "{{ RUNPOD_SECRET_DO_SPACES_KEY }}" (confirmed live, 2026-08-18:
+        # the secret hadn't been created in the RunPod console yet). Convert
+        # to the same clean, catchable error either way rather than letting
+        # a raw boto3 exception surface as a bare 500.
+        raise OutboxConfigError(f"DO Spaces outbox request failed: {exc}") from exc
 
     processed = []
     errors = []
-    for key in list_pending():
+    for key in pending:
         try:
             payload = get_result(key)
             run_id = int(key.removeprefix(RESULTS_PREFIX).split("/")[0])
