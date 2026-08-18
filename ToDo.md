@@ -1,9 +1,17 @@
-# Status (2026-08-17)
+# Status (2026-08-18)
 
-Both services are deployed and live on RunPod Flash. The GPU Runner has
-completed a real end-to-end build+upload (Fibo bf16 → HF). The Orchestrator
-is deployed and its `/health` route is confirmed working; its SQLite
-persistence across worker scale-to-zero is NOT yet proven (see 18 below).
+Flash path works end-to-end (real Fibo bf16 built + uploaded to HF).
+Orchestrator deployed; SQLite persistence across worker scale-to-zero is
+PROVEN (a run row survived worker death + a full redeploy). Swagger is live
+at `https://<endpoint-id>.api.runpod.ai/docs` — needs an
+`Authorization: Bearer <RUNPOD_API_KEY>` header (RunPod authenticates LB
+endpoints at the edge; every path 401s without it, including `/ping`).
+
+Docker runner path: PARTIALLY proven. Image builds+pushes to GHCR, container
+starts on CUDA 13.0.1, GPU healthy, handler registers, container-start
+`uv pip install` of mlx/mflux succeeds, HF download begins. NOT proven: a
+completed quantize+upload — two attempts ended for environmental reasons (an
+HF Xet transfer error, then the endpoint being deleted mid-job).
 
 # Tasks
 
@@ -90,6 +98,16 @@ persistence across worker scale-to-zero is NOT yet proven (see 18 below).
   been set on the deployed Runner (it only exists now that the Orchestrator has a stable
   URL) — the Fibo bf16 test ran with no run_id/callback, so `update_run_status_from_children`
   has only been tested via FastAPI TestClient, never against a real callback POST.
+- **`/report/dump` route not wired**: `app/report.py::dump_all()` is written and tested
+  (full raw JSON of runs + quant_builds + series_volumes + summary), but no route exposes
+  it yet in `app/orchestrator_endpoint.py` / `app/main.py`.
+- **`flash deploy` fails with "endpoint template names must be unique"** on repeat deploys.
+  Cause: `flash undeploy <name> --force` deletes the endpoint but orphans its *template*,
+  so the next deploy collides. This is a consequence of the clean-slate undeploy step in
+  deploy.yml. Likely fix: remove that step — evidence suggests `flash deploy` DOES update
+  in place (it logged "LiveServerless:... is no longer valid, redeploying"), and the
+  duplicates that motivated the step came from `.flash/resources.pkl` divergence plus
+  out-of-band MCP deletions, not from deploy itself.
 - `configs/Qwen-Image-Layered.yaml` still has `hf_model_name: null` — needs manual research.
 - Runner `workers=(0, 1)` still capped for safe one-at-a-time testing — raise once you're
   comfortable with concurrent GPU jobs.

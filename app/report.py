@@ -1,5 +1,7 @@
 """Run/quant-build reporting (PRD: /report). Pure reads over db.py's SQLite tables."""
 
+from datetime import datetime, timezone
+
 from app.db import get_connection
 
 
@@ -157,6 +159,37 @@ def runs_for_series(model_series: str, limit: int = 20) -> list[dict]:
             (model_series, limit),
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def dump_all() -> dict:
+    """Full raw dump of every table -- runs (each with its quant_builds) and
+    series_volumes -- for offline inspection/debugging. Unlike recent_runs()
+    this is deliberately unlimited: it's a "give me everything" report, so
+    expect it to grow with run history."""
+    with get_connection() as conn:
+        runs = [dict(r) for r in conn.execute("SELECT * FROM runs ORDER BY id").fetchall()]
+        builds_by_run: dict[int, list[dict]] = {}
+        for b in conn.execute("SELECT * FROM quant_builds ORDER BY id").fetchall():
+            builds_by_run.setdefault(b["run_id"], []).append(dict(b))
+        for r in runs:
+            r["quant_builds"] = builds_by_run.get(r["id"], [])
+
+        volumes = [
+            dict(v)
+            for v in conn.execute("SELECT * FROM series_volumes ORDER BY id").fetchall()
+        ]
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "counts": {
+            "runs": len(runs),
+            "quant_builds": sum(len(r["quant_builds"]) for r in runs),
+            "series_volumes": len(volumes),
+        },
+        "runs": runs,
+        "series_volumes": volumes,
+        "summary": summary(),
+    }
 
 
 def summary() -> dict:
