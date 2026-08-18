@@ -6,15 +6,14 @@ app/runner.py's actual logic (build_and_upload_one_quant, find_model_class,
 etc.) is unchanged and shared between both deployment paths -- only this
 entrypoint differs.
 
-mlx/mflux are installed here, at container START (via `uv pip`, already in
-the image's venv), not baked into dockerFiles/runner.dockerfile -- that image
-only carries CUDA/cuDNN/Python/system libs, which rarely change. By default,
-this installs the current mlx[cuda13] + mflux-community/mflux@main. Both the
-repo URL and branch can be overridden per-job (a fork/PR someone wants to
-test, e.g. one adding a new model) without rebuilding the image at all --
-when a custom repo/branch is requested, the default mflux install is
-uninstalled first, then the custom one installed on top (see
-_ensure_mflux_installed).
+mlx/mflux are baked into dockerFiles/runner.dockerfile at IMAGE BUILD time
+(see BAKED_MLX_VERSION / BAKED_MFLUX_TARGET below, which must match the
+Dockerfile's install lines). By default this handler installs NOTHING at
+container start -- it just uses what's in the image. force_mlx_ver and
+force_mflux_repo are opt-in per-job overrides (e.g. testing a different mlx
+release, or a fork/branch of mflux) that pip-install on top of the baked
+image without rebuilding it; when neither is set, no pip install runs at
+all (see _apply_overrides).
 
 Job input shape (event["input"]):
   {
@@ -22,8 +21,8 @@ Job input shape (event["input"]):
     "config": dict,          # resolved configs/{config_stem}.yaml, as data
     "quant": str,
     "volume_root": str,      # local path to the mounted per-series volume
-    "mflux_repo_url": str,   # optional, default the mflux-community repo
-    "mflux_branch": str,     # optional, default "main"
+    "force_mlx_ver": str,       # optional, e.g. "0.35.0" -- overrides the baked mlx
+    "force_mflux_repo": str,    # optional, "https://.../mflux.git@branch" -- overrides the baked mflux
     "force_hf_overwrite": bool,   # optional, default False
     "already_published": bool,    # optional, default False
     "run_id": int | None,         # optional, enables the Orchestrator callback
@@ -46,39 +45,45 @@ import httpx
 import runpod
 from huggingface_hub import HfApi
 
-_MFLUX_MARKER = Path("/tmp/.mflux_runner_deps_installed")
-DEFAULT_MFLUX_REPO_URL = "https://github.com/mflux-community/mflux.git"
+_OVERRIDE_MARKER = Path("/tmp/.mflux_runner_overrides_applied")
+
+# Must match dockerFiles/runner.dockerfile's baked-in install lines exactly.
+# Only used to *restore* a warm container to the baked state after a
+# previous job on it applied an override (see _apply_overrides) -- the
+# default (no-override) path never reads these to install anything, since
+# the image already has them.
+BAKED_MLX_VERSION = "0.32.0"
+# NOTE: mflux's own pyproject.toml normally pins mlx<0.32.0 to work around a
+# known CUDA/Linux quantized_matmul bug in mlx>=0.32.0. 0.32.0 is baked in
+# here anyway per explicit request; quantized (non-bf16) builds against the
+# baked default may hit that bug until force_mlx_ver pins back below 0.32.0.
+BAKED_MFLUX_TARGET = "https://github.com/mflux-community/mflux.git@main"
 
 
-MLX_VERSION_RANGE = "mlx[cuda13]>=0.30.3,<0.32.0"
-# NOT a staleness pin -- a correctness constraint from mflux's own
-# pyproject.toml (mlx<0.32.0 on Linux has a known quantized_matmul bug per
-# mflux's own upstream comment). Every mflux branch/fork should still want
-# this same range; if a future branch needs a different mlx range, that
-# becomes a job input too.
+def _apply_overrides(force_mlx_ver: str | None, force_mflux_repo: str | None) -> None:
+    """No-op by default -- the image already has a working mlx+mflux baked
+    in (dockerFiles/runner.dockerfile), so when neither override is set this
+    installs nothing at all.
 
-DEFAULT_TARGET = f"{DEFAULT_MFLUX_REPO_URL}@main"
+    force_mlx_ver pip-installs a specific mlx[cuda13] version on top of the
+    image. force_mflux_repo (format: "https://.../mflux.git@branch", pip's
+    own git-VCS syntax) uninstalls the baked mflux and installs that
+    repo/branch instead -- a straight `uv pip install` over an existing
+    git-source package doesn't reliably swap the source, since pip resolvers
+    can treat an already-satisfied requirement as a no-op.
 
-
-def _ensure_mflux_installed(mflux_repo_url: str, mflux_branch: str) -> None:
-    """Installs the current mlx[cuda13] + mflux (mflux-community@main by
-    default), once per warm container. Guarded by a marker file so a warm
-    container only pays this cost once.
-
-    A custom repo_url/branch (a fork/PR someone wants to test) is handled
-    differently: the default mflux install is uninstalled first, then the
-    custom one installed on top -- a straight `uv pip install` over an
-    existing git-source package doesn't reliably swap the source, since pip
-    resolvers can treat an already-satisfied requirement as a no-op. This
-    only runs once per (repo_url, branch) pair per warm container -- RunPod's
-    scheduler gives no affinity guarantee between a worker and a job's
-    parameters, so a later job on the same warm worker asking for a
-    different branch correctly re-triggers the swap rather than silently
-    keeping a previous job's custom mflux.
+    Guarded by a marker file so a warm container only pays the install cost
+    once per requested state. RunPod's scheduler gives no affinity guarantee
+    between a worker and a job's parameters, so a later job on the same warm
+    worker asking for a *different* state (including reverting to no
+    override) correctly re-triggers a swap back to the baked default rather
+    than silently keeping a previous job's override.
     """
-    target = f"{mflux_repo_url}@{mflux_branch}"
-    if _MFLUX_MARKER.exists() and _MFLUX_MARKER.read_text() == target:
+    state = f"mlx={force_mlx_ver or 'baked'}|mflux={force_mflux_repo or 'baked'}"
+    if _OVERRIDE_MARKER.exists() and _OVERRIDE_MARKER.read_text() == state:
         return
+
+    previously_overridden = _OVERRIDE_MARKER.exists()
 
     # Bounded well under RunPod's own job deadline -- a hung network/git
     # fetch here would otherwise block indefinitely inside handler()'s try
@@ -86,28 +91,37 @@ def _ensure_mflux_installed(mflux_repo_url: str, mflux_branch: str) -> None:
     # exception handler that reports a clean failure back to the Orchestrator.
     install_timeout_s = 300
 
-    if target == DEFAULT_TARGET:
+    if force_mlx_ver:
         subprocess.run(
-            ["uv", "pip", "install", "--quiet", MLX_VERSION_RANGE,
-             f"mflux @ git+{mflux_repo_url}@{mflux_branch}"],
+            ["uv", "pip", "install", "--quiet", f"mlx[cuda13]=={force_mlx_ver}"],
             check=True, timeout=install_timeout_s,
         )
-    else:
-        # Custom branch/fork requested -- uninstall whatever mflux is
-        # currently present (the default, or a different custom branch from
-        # an earlier job on this same warm worker) before installing the
-        # requested one.
+    elif previously_overridden:
+        subprocess.run(
+            ["uv", "pip", "install", "--quiet", f"mlx[cuda13]=={BAKED_MLX_VERSION}"],
+            check=True, timeout=install_timeout_s,
+        )
+
+    if force_mflux_repo:
         subprocess.run(
             ["uv", "pip", "uninstall", "--quiet", "mflux"],
             check=False, timeout=60,
         )
         subprocess.run(
-            ["uv", "pip", "install", "--quiet", MLX_VERSION_RANGE,
-             f"mflux @ git+{mflux_repo_url}@{mflux_branch}"],
+            ["uv", "pip", "install", "--quiet", f"mflux @ git+{force_mflux_repo}"],
+            check=True, timeout=install_timeout_s,
+        )
+    elif previously_overridden:
+        subprocess.run(
+            ["uv", "pip", "uninstall", "--quiet", "mflux"],
+            check=False, timeout=60,
+        )
+        subprocess.run(
+            ["uv", "pip", "install", "--quiet", f"mflux @ git+{BAKED_MFLUX_TARGET}"],
             check=True, timeout=install_timeout_s,
         )
 
-    _MFLUX_MARKER.write_text(target)
+    _OVERRIDE_MARKER.write_text(state)
 
 
 def handler(event: dict) -> dict:
@@ -135,12 +149,12 @@ def handler(event: dict) -> dict:
         volume_root = job_input["volume_root"]
         if quant is None or config_stem is None:
             raise KeyError("config_stem and quant are required job input fields")
-        mflux_repo_url = job_input.get("mflux_repo_url", DEFAULT_MFLUX_REPO_URL)
-        mflux_branch = job_input.get("mflux_branch", "main")
+        force_mlx_ver = job_input.get("force_mlx_ver")
+        force_mflux_repo = job_input.get("force_mflux_repo")
         force_hf_overwrite = job_input.get("force_hf_overwrite", False)
         already_published = job_input.get("already_published", False)
 
-        _ensure_mflux_installed(mflux_repo_url, mflux_branch)
+        _apply_overrides(force_mlx_ver, force_mflux_repo)
 
         from app.runner import build_and_upload_one_quant
 

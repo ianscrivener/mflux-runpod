@@ -25,13 +25,17 @@ WORKDIR /app
 RUN uv venv /opt/venv
 
 RUN uv pip install --no-cache pip runpod httpx huggingface_hub pyyaml
-RUN uv pip install --no-cache mlx[cuda13]
-RUN uv pip install --no-cache mflux
-# mflux's own pyproject.toml pins mlx<0.32.0 (works around a CUDA/Linux
-# quantized_matmul bug in mlx>=0.32.0 -- see dockerFiles/runner_handler.py's
-# MLX_VERSION_RANGE comment). This forces the newer pin back on top,
-# overriding that constraint at build time.
+
+# Baked-in default mlx + mflux -- must match runner_handler.py's
+# BAKED_MLX_VERSION / BAKED_MFLUX_TARGET exactly, since the handler only
+# reinstalls either of these when a job explicitly requests an override
+# (force_mlx_ver / force_mflux_repo). mflux's own pyproject.toml normally
+# pins mlx<0.32.0 (works around a known CUDA/Linux quantized_matmul bug in
+# mlx>=0.32.0); 0.32.0 is forced here anyway per explicit request, so
+# quantized (non-bf16) builds against this default may hit that bug until
+# a job passes force_mlx_ver to pin back below 0.32.0.
 RUN uv pip install --no-cache "mlx[cuda13]==0.32.0"
+RUN uv pip install --no-cache "mflux @ git+https://github.com/mflux-community/mflux.git@main"
 
 
 
