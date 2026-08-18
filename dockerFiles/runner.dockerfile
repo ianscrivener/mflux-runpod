@@ -12,9 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV LD_LIBRARY_PATH="/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/nccl/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cufft/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}"
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && mkdir -p /app \
-    && cd /app \
-    && uv venv venv \
+
+WORKDIR /app
+
+RUN uv venv venv \
     && source venv/bin/activate \
     && uv init \
     && uv add --upgrade --no-cache pip \
@@ -24,7 +25,7 @@ RUN uv add --no-cache mlx[cuda13]
 RUN uv add --no-cache mflux    
 
 
-WORKDIR /app
+
 COPY app/ ./app/
 COPY dockerFiles/runner_handler.py ./
 
