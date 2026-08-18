@@ -38,3 +38,11 @@ model_store: (_fetch "/model_store")
 
 # GET /report, raw JSON
 report: (_fetch "/report")
+
+# Open the current Orchestrator's /docs in your browser (will likely 401, browser can't send the Bearer header)
+open:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    url=$(.venv/bin/python3 scripts/resolve_orchestrator_url.py)
+    echo "Opening ${url}/docs (will 401 without a Bearer header -- browser can't send one)" >&2
+    open "${url}/docs"
