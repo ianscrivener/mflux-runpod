@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db import init_db
 from app.generate import UnknownModelError, dry_run_trigger, generate_all, generate_one
@@ -66,16 +66,61 @@ def model_store():
 
 
 class GenerateRequest(BaseModel):
-    hf_model_name: str | None = None  # informational only; config_stem resolves the config
-    config_stem: str
-    mflux_repo: str | None = None
-    mflux_branch: str | None = None
-    quants: list[str] | None = None
-    force_hf_overwrite: bool = False
-    dispatch: bool = False  # opt-in: fire a real, billed GPU job. False = dry-run only.
+    config_stem: str = Field(
+        ...,
+        description="Model series to generate, matching a configs/{config_stem}.yaml "
+        "file exactly (see GET /models_supported or /models_missing for valid values). "
+        "Case-sensitive filename stem, not the Hugging Face model name.",
+        examples=["Fibo"],
+    )
+    quants: list[str] | None = Field(
+        default=None,
+        description="Which quantizations to build, e.g. [\"q4\", \"q8\"]. Omit to build "
+        "every quant declared in the config, minus any already published on Hugging "
+        "Face (see /models_hf) unless force_hf_overwrite is set.",
+        examples=[["q4", "q8"]],
+    )
+    mflux_repo: str | None = Field(
+        default=None,
+        description="Override the mflux source repo to build against (a fork/PR under "
+        "test). Omit to use the default (mflux-community/mflux). Only takes effect "
+        "when dispatch=true.",
+        examples=["https://github.com/mflux-community/mflux.git"],
+    )
+    mflux_branch: str | None = Field(
+        default=None,
+        description="Branch of mflux_repo to build against. Omit for \"main\". Only "
+        "takes effect when dispatch=true.",
+        examples=["main"],
+    )
+    force_hf_overwrite: bool = Field(
+        default=False,
+        description="Rebuild and overwrite a quant even if it's already published on "
+        "Hugging Face, instead of skipping it.",
+    )
+    dispatch: bool = Field(
+        default=False,
+        description="Opt-in to real work. false (default) = dry-run: plans and records "
+        "a `runs` row only, makes no RunPod API calls, dispatches nothing. true = "
+        "creates/reuses the series' RunPod network volume and dispatches one real, "
+        "billed GPU job per quant to the Runner (see app/generate.py::dispatch_trigger).",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "config_stem": "Fibo",
+                    "quants": ["q4", "q8"],
+                    "force_hf_overwrite": False,
+                    "dispatch": False,
+                }
+            ]
+        }
+    }
 
 
-@app.post("/generate")
+@app.post("/generate", summary="Plan (and optionally dispatch) one model series' build")
 def generate(request: GenerateRequest):
     """Plan+record one model's generation run. Dry-runs by default (plans
     and records a `runs` row only, no RunPod API calls) — pass
@@ -98,10 +143,18 @@ def generate(request: GenerateRequest):
 
 
 class GenerateAllRequest(BaseModel):
-    dispatch: bool = False
+    dispatch: bool = Field(
+        default=False,
+        description="Same opt-in as /generate's dispatch field, applied to every "
+        "series GET /models_missing currently reports as missing at least one quant. "
+        "false (default) dry-runs all of them; true dispatches a real GPU job per "
+        "missing quant, across every missing series, in one call.",
+    )
+
+    model_config = {"json_schema_extra": {"examples": [{"dispatch": False}]}}
 
 
-@app.post("/generate_all")
+@app.post("/generate_all", summary="Plan (and optionally dispatch) every missing series")
 def generate_all_endpoint(request: GenerateAllRequest = GenerateAllRequest()):
     """Plan+record a run for every series /models_missing reports. Same
     dispatch opt-in as /generate — defaults to dry-run."""

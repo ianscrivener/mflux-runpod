@@ -37,9 +37,86 @@ it (`flash deploy`) or running it against `flash dev` provisions/uses real,
 billed RunPod CPU workers + a network volume. Do that deliberately.
 """
 
+from pydantic import BaseModel, Field
 from runpod_flash import CpuInstanceType, DataCenter, Endpoint, NetworkVolume
 
 ORCHESTRATOR_DATACENTER = DataCenter.EU_RO_1  # Flash CPU endpoints: EU-RO-1 only
+
+# Module-level, not inside the route body like Gotcha #1 normally requires --
+# Flash's LB handler wrapper (runpod_flash.runtime.lb_handler) special-cases
+# a handler whose body param is already a Pydantic BaseModel: it's passed
+# through unwrapped instead of being nested under a synthesized {"data": ...}
+# key (see dockerFiles/runner_handler.py's callback, which DOES need that
+# wrapping because it targets data: dict there). That only works if the
+# model is a real class FastAPI can introspect for its JSON schema -- which
+# requires it to exist as a class, not be reconstructed inside each request.
+# Verified via `flash build` (build-only, no deploy) that this ships correctly
+# in the generated worker handler before ever touching the live endpoint.
+class GenerateRequest(BaseModel):
+    config_stem: str = Field(
+        ...,
+        description="Model series to generate, matching a configs/{config_stem}.yaml "
+        "file exactly (see GET /models_supported or /models_missing for valid values). "
+        "Case-sensitive filename stem, not the Hugging Face model name.",
+        examples=["Fibo"],
+    )
+    quants: list[str] | None = Field(
+        default=None,
+        description="Which quantizations to build, e.g. [\"q4\", \"q8\"]. Omit to build "
+        "every quant declared in the config, minus any already published on Hugging "
+        "Face (see /models_hf) unless force_hf_overwrite is set.",
+        examples=[["q4", "q8"]],
+    )
+    mflux_repo: str | None = Field(
+        default=None,
+        description="Override the mflux source repo to build against (a fork/PR under "
+        "test). Omit to use the default (mflux-community/mflux). Only takes effect "
+        "when dispatch=true.",
+        examples=["https://github.com/mflux-community/mflux.git"],
+    )
+    mflux_branch: str | None = Field(
+        default=None,
+        description="Branch of mflux_repo to build against. Omit for \"main\". Only "
+        "takes effect when dispatch=true.",
+        examples=["main"],
+    )
+    force_hf_overwrite: bool = Field(
+        default=False,
+        description="Rebuild and overwrite a quant even if it's already published on "
+        "Hugging Face, instead of skipping it.",
+    )
+    dispatch: bool = Field(
+        default=False,
+        description="Opt-in to real work. false (default) = dry-run: plans and records "
+        "a `runs` row only, makes no RunPod API calls, dispatches nothing. true = "
+        "creates/reuses the series' RunPod network volume and dispatches one real, "
+        "billed GPU job per quant to the Runner (see app/generate.py::dispatch_trigger).",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "config_stem": "Fibo",
+                    "quants": ["q4", "q8"],
+                    "force_hf_overwrite": False,
+                    "dispatch": False,
+                }
+            ]
+        }
+    }
+
+
+class GenerateAllRequest(BaseModel):
+    dispatch: bool = Field(
+        default=False,
+        description="Same opt-in as /generate's dispatch field, applied to every "
+        "series GET /models_missing currently reports as missing at least one quant. "
+        "false (default) dry-runs all of them; true dispatches a real GPU job per "
+        "missing quant, across every missing series, in one call.",
+    )
+
+    model_config = {"json_schema_extra": {"examples": [{"dispatch": False}]}}
 
 orchestrator = Endpoint(
     name="mflux-orchestrator",
@@ -108,7 +185,11 @@ async def model_store() -> dict:
 
 
 @orchestrator.post("/generate")
-async def generate(data: dict) -> dict:
+async def generate(data: GenerateRequest) -> dict:
+    """Plan+record one model's generation run. Dry-runs by default (plans
+    and records a `runs` row only, no RunPod API calls) — pass
+    dispatch=true to actually create/reuse the series' volume and dispatch
+    real GPU jobs to the Runner (see app/generate.py::dispatch_trigger)."""
     from app.db import init_db
     from app.generate import UnknownModelError, dispatch_trigger, dry_run_trigger, generate_one
 
@@ -117,14 +198,14 @@ async def generate(data: dict) -> dict:
     # itself. init_db() is CREATE TABLE IF NOT EXISTS -- cheap, idempotent,
     # safe to call on every request.
     init_db()
-    trigger_fn = dispatch_trigger if data.get("dispatch", False) else dry_run_trigger
+    trigger_fn = dispatch_trigger if data.dispatch else dry_run_trigger
     try:
         return generate_one(
-            data["config_stem"],
-            quants=data.get("quants"),
-            mflux_repo=data.get("mflux_repo"),
-            mflux_branch=data.get("mflux_branch"),
-            force_hf_overwrite=data.get("force_hf_overwrite", False),
+            data.config_stem,
+            quants=data.quants,
+            mflux_repo=data.mflux_repo,
+            mflux_branch=data.mflux_branch,
+            force_hf_overwrite=data.force_hf_overwrite,
             trigger_fn=trigger_fn,
         )
     except UnknownModelError as exc:
@@ -132,13 +213,14 @@ async def generate(data: dict) -> dict:
 
 
 @orchestrator.post("/generate_all")
-async def generate_all_route(data: dict | None = None) -> dict:
+async def generate_all_route(data: GenerateAllRequest = GenerateAllRequest()) -> dict:
+    """Plan+record a run for every series GET /models_missing reports. Same
+    dispatch opt-in as /generate — defaults to dry-run."""
     from app.db import init_db
     from app.generate import dispatch_trigger, dry_run_trigger, generate_all
 
     init_db()
-    dispatch = (data or {}).get("dispatch", False)
-    trigger_fn = dispatch_trigger if dispatch else dry_run_trigger
+    trigger_fn = dispatch_trigger if data.dispatch else dry_run_trigger
     return {"runs": generate_all(trigger_fn=trigger_fn)}
 
 
