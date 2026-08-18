@@ -73,7 +73,7 @@ def update_run_status_from_children(run_id: int, finished_at: str, error: str | 
     """
     with get_connection() as conn:
         run = conn.execute(
-            "SELECT expected_quants FROM runs WHERE id = ?", (run_id,)
+            "SELECT expected_quants, started_at FROM runs WHERE id = ?", (run_id,)
         ).fetchone()
         if run is None:
             raise ValueError(f"run {run_id} not found")
@@ -90,9 +90,21 @@ def update_run_status_from_children(run_id: int, finished_at: str, error: str | 
         else:
             derived = "partial"
 
+        # Was never actually computed on this path (only the unused
+        # finish_run() did) -- confirmed live, 2026-08-18: a finished run's
+        # duration_s stayed null forever. Best-effort: a malformed timestamp
+        # shouldn't fail the whole callback, just leave duration_s unset.
+        duration_s = None
+        try:
+            duration_s = (
+                datetime.fromisoformat(finished_at) - datetime.fromisoformat(run["started_at"])
+            ).total_seconds()
+        except (ValueError, TypeError):
+            pass
+
         conn.execute(
-            "UPDATE runs SET finished_at = ?, status = ?, error = ? WHERE id = ?",
-            (finished_at, derived, error, run_id),
+            "UPDATE runs SET finished_at = ?, duration_s = ?, status = ?, error = ? WHERE id = ?",
+            (finished_at, duration_s, derived, error, run_id),
         )
         conn.commit()
         return derived

@@ -19,7 +19,7 @@ from typing import Callable
 
 from app.models_hf import load_models_hf
 from app.models_missing import expected_repo_ids, load_configs, load_overrides
-from app.report import create_run
+from app.report import create_run, finish_run
 
 DEFAULT_MFLUX_REPO = "https://github.com/mflux-community/mflux.git"
 DEFAULT_MFLUX_BRANCH = "main"
@@ -162,15 +162,31 @@ def generate_one(
         q for q, repo_id in repo_ids.items() if force_hf_overwrite or repo_id not in published
     ]
 
+    started_at = datetime.now(timezone.utc)
     run_id = create_run(
         model_series=model_stem,
-        started_at=datetime.now(timezone.utc).isoformat(),
+        started_at=started_at.isoformat(),
         expected_quants=len(quants_to_build),
         hf_model_name=config.get("hf_model_name"),
         mflux_repo=mflux_repo,
         mflux_branch=config["mflux_branch"],
         force_hf_overwrite=force_hf_overwrite,
     )
+
+    if not quants_to_build:
+        # Nothing to do (every quant already published, or none declared) --
+        # expected_quants=0 means update_run_status_from_children never gets
+        # called for this run_id (it's only invoked by a quant job's
+        # callback, and no quant jobs are ever dispatched), so without this
+        # the run sits at its 'running' default forever. Confirmed live,
+        # 2026-08-18: several runs stuck exactly this way.
+        finished_at = datetime.now(timezone.utc)
+        finish_run(
+            run_id,
+            finished_at=finished_at.isoformat(),
+            duration_s=(finished_at - started_at).total_seconds(),
+            status="success",
+        )
 
     plan = {
         "model_stem": model_stem,
