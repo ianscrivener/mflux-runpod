@@ -126,7 +126,7 @@ def generate(request: GenerateRequest):
     and records a `runs` row only, no RunPod API calls) — pass
     dispatch=true to actually create/reuse the series' volume and dispatch
     real GPU jobs to the Runner (see app/generate.py::dispatch_trigger)."""
-    from app.generate import dispatch_trigger
+    from app.generate import DispatchConfigError, dispatch_trigger
 
     trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
     try:
@@ -140,6 +140,8 @@ def generate(request: GenerateRequest):
         )
     except UnknownModelError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 class GenerateAllRequest(BaseModel):
@@ -158,10 +160,13 @@ class GenerateAllRequest(BaseModel):
 def generate_all_endpoint(request: GenerateAllRequest = GenerateAllRequest()):
     """Plan+record a run for every series /models_missing reports. Same
     dispatch opt-in as /generate — defaults to dry-run."""
-    from app.generate import dispatch_trigger
+    from app.generate import DispatchConfigError, dispatch_trigger
 
     trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
-    return {"runs": generate_all(trigger_fn=trigger_fn)}
+    try:
+        return {"runs": generate_all(trigger_fn=trigger_fn)}
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 class QuantBuildReport(BaseModel):

@@ -133,10 +133,17 @@ orchestrator = Endpoint(
         # scales to zero, so /models_hf returns an empty list until someone
         # re-runs /models_hf/update.
         "MODELS_HF_PATH": "/runpod-volume/models_hf.json",
-        # RunPod Secret, injected at runtime -- see app/runner_endpoint.py's
+        # RunPod Secret, injected at runtime -- see dockerFiles/runner_handler.py's
         # identical HF_TOKEN handling for why this isn't a literal value.
         "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",
         "HF_ORG": "mflux-community",
+        # The Docker GPU Runner's serverless endpoint id -- dispatch_trigger
+        # (app/generate.py) needs this to know where to POST real jobs when
+        # dispatch=true. Not a Flash resource, so there's no name-based
+        # lookup available the way there is for mflux-orchestrator itself;
+        # update this if the Runner endpoint is ever recreated (its id
+        # changes each time, unlike this Flash-managed resource).
+        "RUNNER_ENDPOINT_ID": "jx45e9ewmop06z",
     },
 )
 
@@ -191,7 +198,13 @@ async def generate(data: GenerateRequest) -> dict:
     dispatch=true to actually create/reuse the series' volume and dispatch
     real GPU jobs to the Runner (see app/generate.py::dispatch_trigger)."""
     from app.db import init_db
-    from app.generate import UnknownModelError, dispatch_trigger, dry_run_trigger, generate_one
+    from app.generate import (
+        DispatchConfigError,
+        UnknownModelError,
+        dispatch_trigger,
+        dry_run_trigger,
+        generate_one,
+    )
 
     # No FastAPI lifespan hook in Flash's load-balanced route mode (unlike
     # app/main.py), so each DB-touching route ensures the schema exists
@@ -210,6 +223,8 @@ async def generate(data: GenerateRequest) -> dict:
         )
     except UnknownModelError as exc:
         return {"error": str(exc)}
+    except DispatchConfigError as exc:
+        return {"error": str(exc)}
 
 
 @orchestrator.post("/generate_all")
@@ -217,11 +232,14 @@ async def generate_all_route(data: GenerateAllRequest = GenerateAllRequest()) ->
     """Plan+record a run for every series GET /models_missing reports. Same
     dispatch opt-in as /generate — defaults to dry-run."""
     from app.db import init_db
-    from app.generate import dispatch_trigger, dry_run_trigger, generate_all
+    from app.generate import DispatchConfigError, dispatch_trigger, dry_run_trigger, generate_all
 
     init_db()
     trigger_fn = dispatch_trigger if data.dispatch else dry_run_trigger
-    return {"runs": generate_all(trigger_fn=trigger_fn)}
+    try:
+        return {"runs": generate_all(trigger_fn=trigger_fn)}
+    except DispatchConfigError as exc:
+        return {"error": str(exc)}
 
 
 @orchestrator.post("/report/run/{run_id}")

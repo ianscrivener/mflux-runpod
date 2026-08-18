@@ -29,6 +29,15 @@ class UnknownModelError(ValueError):
     pass
 
 
+class DispatchConfigError(RuntimeError):
+    """Raised by dispatch_trigger when the environment it needs (RUNNER_ENDPOINT_ID,
+    RUNPOD_API_KEY) isn't configured -- a deployment/config problem, not a bad
+    request, but callers should still turn this into a clean error response
+    instead of letting it surface as an unhandled 500."""
+
+    pass
+
+
 def resolve_generate_config(
     model_stem: str,
     quants: list[str] | None = None,
@@ -73,8 +82,19 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
 
     from app.runpod_volumes import create_volume
 
-    runner_endpoint_id = os.environ["RUNNER_ENDPOINT_ID"]
-    api_key = os.environ["RUNPOD_API_KEY"]
+    runner_endpoint_id = os.environ.get("RUNNER_ENDPOINT_ID")
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if not runner_endpoint_id or not api_key:
+        missing = [
+            name
+            for name, value in (("RUNNER_ENDPOINT_ID", runner_endpoint_id), ("RUNPOD_API_KEY", api_key))
+            if not value
+        ]
+        raise DispatchConfigError(
+            f"dispatch=true requires {', '.join(missing)} in the Orchestrator's "
+            "environment, but it's not set -- real GPU dispatch isn't configured "
+            "on this deployment yet."
+        )
 
     volume = create_volume(model_series)
     config = load_configs()[model_series]
