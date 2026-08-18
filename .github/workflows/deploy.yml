@@ -15,6 +15,15 @@ on:
           - undeploy
         default: deploy
 
+# Serialise deploys. Two overlapping runs on 2026-08-18 raced: the newer one
+# deployed all three endpoints, then the older one's clean-slate step deleted
+# them and failed, leaving the account with ZERO endpoints despite a
+# "successful" deploy. cancel-in-progress stops the superseded run before it
+# can tear down what a later run just created.
+concurrency:
+  group: runpod-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
