@@ -46,3 +46,22 @@ open:
     url=$(.venv/bin/python3 scripts/resolve_orchestrator_url.py)
     echo "Opening ${url}/docs (will 401 without a Bearer header -- browser can't send one)" >&2
     open "${url}/docs"
+
+# Sync the Orchestrator's code+config to its standalone local runtime folder
+# (/Users/ianscrivener/bin/MFlux_Orchestrator, run there via `uv run uvicorn app.main:app`).
+# Explicit file allowlist, not a wildcard copy of app/ -- so Runner/Flash-only
+# files (runner.py, orchestrator_endpoint.py, runner_endpoint.py) never leak in,
+# even if someone adds more app/*.py later without updating this. Never touches
+# data/reports.sqlite or data/models_hf.json at the destination -- those are that
+# deployment's own live runtime state, not source to be overwritten on a sync.
+update-orchestrator:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dest=/Users/ianscrivener/bin/MFlux_Orchestrator
+    mkdir -p "$dest/app" "$dest/configs" "$dest/data"
+    cp app/__init__.py app/main.py app/db.py app/generate.py app/models_hf.py \
+       app/models_missing.py app/models_supported.py app/outbox.py app/report.py \
+       app/runpod_volumes.py app/series_lifecycle.py "$dest/app/"
+    cp configs/*.yaml "$dest/configs/"
+    cp data/models_mflux.json "$dest/data/"
+    echo "Synced code+config to $dest (data/reports.sqlite and data/models_hf.json there were left untouched)"
