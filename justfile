@@ -52,8 +52,11 @@ open:
 # Explicit file allowlist, not a wildcard copy of app/ -- so Runner/Flash-only
 # files (runner.py, orchestrator_endpoint.py, runner_endpoint.py) never leak in,
 # even if someone adds more app/*.py later without updating this. Never touches
-# data/reports.sqlite or data/models_hf.json at the destination -- those are that
-# deployment's own live runtime state, not source to be overwritten on a sync.
+# data/reports.sqlite, data/models_hf.json, or .env at the destination -- those
+# are that deployment's own live runtime state/secrets, not source to be
+# overwritten on a sync. orchestrator-local/{justfile,README.md,pyproject.toml}
+# are the hand-authored deployment files (svc-add/svc-del, docs, trimmed deps)
+# -- edit them here, not in the destination, so they stay version-controlled.
 update-orchestrator:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -64,4 +67,6 @@ update-orchestrator:
        app/runpod_volumes.py app/series_lifecycle.py "$dest/app/"
     cp configs/*.yaml "$dest/configs/"
     cp data/models_mflux.json "$dest/data/"
-    echo "Synced code+config to $dest (data/reports.sqlite and data/models_hf.json there were left untouched)"
+    cp orchestrator-local/justfile orchestrator-local/README.md orchestrator-local/pyproject.toml "$dest/"
+    cp orchestrator-local/.env.sample "$dest/.env.sample"
+    echo "Synced code+config+deployment files to $dest (data/reports.sqlite, data/models_hf.json, and .env there were left untouched)"

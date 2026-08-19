@@ -1,0 +1,55 @@
+# List available recipes
+default:
+    @just --list
+
+label := "com.ianscrivener.mflux-orchestrator"
+plist := "/Users/ianscrivener/Library/LaunchAgents/com.ianscrivener.mflux-orchestrator.plist"
+root := justfile_directory()
+
+# Install + start the Orchestrator as a launchd service (runs at login, restarts on crash,
+# binds 127.0.0.1:8000 only). Logs to logs/orchestrator.{out,err}.log under this folder.
+svc-add:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ root }}/logs"
+    cat > "{{ plist }}" <<PLIST
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>{{ label }}</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Users/ianscrivener/.local/bin/uv</string>
+            <string>run</string>
+            <string>uvicorn</string>
+            <string>app.main:app</string>
+            <string>--host</string>
+            <string>127.0.0.1</string>
+            <string>--port</string>
+            <string>8000</string>
+        </array>
+        <key>WorkingDirectory</key>
+        <string>{{ root }}</string>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>StandardOutPath</key>
+        <string>{{ root }}/logs/orchestrator.out.log</string>
+        <key>StandardErrorPath</key>
+        <string>{{ root }}/logs/orchestrator.err.log</string>
+    </dict>
+    </plist>
+    PLIST
+    launchctl bootstrap "gui/$(id -u)" "{{ plist }}"
+    echo "Installed and started {{ label }} -- http://127.0.0.1:8000 (logs in {{ root }}/logs/)"
+
+# Stop + uninstall the launchd service
+svc-del:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    launchctl bootout "gui/$(id -u)/{{ label }}" 2>/dev/null || true
+    rm -f "{{ plist }}"
+    echo "Removed {{ label }}"
