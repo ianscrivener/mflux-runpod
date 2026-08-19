@@ -130,6 +130,62 @@ def models_queue_restore():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+class QueueEntryRequest(BaseModel):
+    model_stem: str = Field(..., description="Must match a configs/models/{stem}.yaml", examples=["Fibo"])
+    quants: list[str] | None = Field(default=None, description="Omit to mean 'whatever's missing at process time'")
+    force_hf_overwrite: bool = Field(default=False)
+    note: str | None = Field(default=None)
+
+
+class QueueEntryUpdateRequest(BaseModel):
+    status: str | None = Field(default=None, description="pending | approved | skipped")
+    quants: list[str] | None = None
+    force_hf_overwrite: bool | None = None
+    note: str | None = None
+
+
+@app.get("/models_queue", summary="List queue entries")
+def models_queue_list():
+    from app.queue import list_entries
+
+    return {"entries": list_entries()}
+
+
+@app.post("/models_queue", summary="Add a model series to the queue")
+def models_queue_add(request: QueueEntryRequest):
+    from app.queue import QueueValidationError, add_entry
+
+    try:
+        return add_entry(
+            request.model_stem, request.quants, request.force_hf_overwrite, request.note
+        )
+    except QueueValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/models_queue/{entry_id}", summary="Update a queue entry")
+def models_queue_update(entry_id: int, request: QueueEntryUpdateRequest):
+    from app.queue import QueueValidationError, update_entry
+
+    try:
+        return update_entry(
+            entry_id, request.status, request.quants, request.force_hf_overwrite, request.note
+        )
+    except QueueValidationError as exc:
+        status = 404 if "no queue entry" in str(exc) else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+@app.delete("/models_queue/{entry_id}", summary="Remove a queue entry")
+def models_queue_delete(entry_id: int):
+    from app.queue import QueueValidationError, delete_entry
+
+    try:
+        return {"deleted": entry_id, **delete_entry(entry_id)}
+    except QueueValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/datasets", summary="List the seven HF-bucket-backed datasets and their sync state")
 def datasets_list():
     from app.hf_datasets import list_datasets
@@ -243,6 +299,23 @@ def generate(request: GenerateRequest):
             force_hf_overwrite=request.force_hf_overwrite,
             trigger_fn=trigger_fn,
         )
+    except UnknownModelError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/generate/{run_id}/cancel", summary="Cancel a run's still-in-flight RunPod jobs")
+def generate_cancel(run_id: int):
+    """Best-effort: cancels every job dispatch_trigger recorded for this
+    run_id that hasn't already been cancelled, then marks the run
+    'cancelled' regardless of whether every individual cancel call
+    succeeded (a job that already finished will fail to cancel, that's
+    fine)."""
+    from app.generate import DispatchConfigError, UnknownModelError, cancel_run
+
+    try:
+        return cancel_run(run_id)
     except UnknownModelError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except DispatchConfigError as exc:

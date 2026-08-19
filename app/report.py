@@ -217,6 +217,47 @@ def clear_runs() -> dict:
     return {"runs_deleted": runs_deleted, "quant_builds_deleted": quant_builds_deleted}
 
 
+def record_dispatched_job(run_id: int, quant: str, job_id: str) -> int:
+    """One row per RunPod job actually submitted -- see cancel_run() for why."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO dispatched_jobs (run_id, quant, job_id, dispatched_at) VALUES (?, ?, ?, ?)",
+            (run_id, quant, job_id, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def jobs_for_run(run_id: int, include_cancelled: bool = False) -> list[dict]:
+    query = "SELECT * FROM dispatched_jobs WHERE run_id = ?"
+    if not include_cancelled:
+        query += " AND cancelled_at IS NULL"
+    with get_connection() as conn:
+        return [dict(r) for r in conn.execute(query, (run_id,)).fetchall()]
+
+
+def mark_jobs_cancelled(run_id: int, job_ids: list[str]) -> None:
+    with get_connection() as conn:
+        now = datetime.now(timezone.utc).isoformat()
+        conn.executemany(
+            "UPDATE dispatched_jobs SET cancelled_at = ? WHERE run_id = ? AND job_id = ?",
+            [(now, run_id, job_id) for job_id in job_ids],
+        )
+        conn.commit()
+
+
+def mark_run_cancelled(run_id: int) -> None:
+    """Explicit override, not derived from quant_builds like
+    update_run_status_from_children -- a cancel is a human decision, not
+    something inferred from job outcomes."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE runs SET status = 'cancelled', finished_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), run_id),
+        )
+        conn.commit()
+
+
 def summary() -> dict:
     """Aggregate stats: run counts by status, avg build/upload duration by quant."""
     with get_connection() as conn:

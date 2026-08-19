@@ -3,13 +3,15 @@ import pytest
 import app.db as db_module
 from app.db import init_db
 from app.generate import (
+    DispatchConfigError,
     UnknownModelError,
+    cancel_run,
     dry_run_trigger,
     generate_all,
     generate_one,
     resolve_generate_config,
 )
-from app.report import run_detail
+from app.report import jobs_for_run, record_dispatched_job, run_detail
 
 
 @pytest.fixture(autouse=True)
@@ -125,3 +127,63 @@ def test_generate_one_makes_no_runpod_call(monkeypatch):
 
     generate_one("Fibo")  # must not raise
     generate_all()  # must not raise
+
+
+def test_cancel_run_unknown_run_raises():
+    with pytest.raises(UnknownModelError):
+        cancel_run(999)
+
+
+def test_cancel_run_requires_runpod_env(monkeypatch):
+    monkeypatch.delenv("RUNNER_ENDPOINT_ID", raising=False)
+    monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+    result = generate_one("Fibo")
+    with pytest.raises(DispatchConfigError):
+        cancel_run(result["run_id"])
+
+
+def test_cancel_run_cancels_every_dispatched_job(monkeypatch):
+    monkeypatch.setenv("RUNNER_ENDPOINT_ID", "test-endpoint")
+    monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+
+    result = generate_one("Fibo")
+    run_id = result["run_id"]
+    record_dispatched_job(run_id, "q4", "job-1")
+    record_dispatched_job(run_id, "q6", "job-2")
+
+    cancelled_calls = []
+    monkeypatch.setattr(
+        "app.runpod_jobs.cancel_job",
+        lambda endpoint_id, job_id: cancelled_calls.append((endpoint_id, job_id)),
+    )
+
+    outcome = cancel_run(run_id)
+
+    assert set(outcome["cancelled"]) == {"job-1", "job-2"}
+    assert outcome["errors"] == []
+    assert {c[1] for c in cancelled_calls} == {"job-1", "job-2"}
+    assert run_detail(run_id)["status"] == "cancelled"
+    assert jobs_for_run(run_id) == []  # cancelled jobs excluded by default
+
+
+def test_cancel_run_one_bad_cancel_does_not_stop_the_rest(monkeypatch):
+    monkeypatch.setenv("RUNNER_ENDPOINT_ID", "test-endpoint")
+    monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
+
+    result = generate_one("Fibo")
+    run_id = result["run_id"]
+    record_dispatched_job(run_id, "q4", "job-ok")
+    record_dispatched_job(run_id, "q6", "job-fails")
+
+    def flaky_cancel(endpoint_id, job_id):
+        if job_id == "job-fails":
+            raise RuntimeError("already finished")
+        return {"status": "CANCELLED"}
+
+    monkeypatch.setattr("app.runpod_jobs.cancel_job", flaky_cancel)
+
+    outcome = cancel_run(run_id)
+
+    assert outcome["cancelled"] == ["job-ok"]
+    assert outcome["errors"] == [{"job_id": "job-fails", "error": "already finished"}]
+    assert run_detail(run_id)["status"] == "cancelled"

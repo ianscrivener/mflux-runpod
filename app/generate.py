@@ -19,7 +19,7 @@ from typing import Callable
 
 from app.models_hf import load_models_hf
 from app.models_missing import expected_repo_ids, load_configs, load_overrides
-from app.report import create_run, finish_run
+from app.report import create_run, finish_run, record_dispatched_job
 
 DEFAULT_MFLUX_REPO = "https://github.com/mflux-community/mflux.git"
 DEFAULT_MFLUX_BRANCH = "main"
@@ -129,7 +129,9 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
                 json={"input": job_input},
             )
             response.raise_for_status()
-            dispatched.append({"quant": quant, "job_id": response.json()["id"]})
+            job_id = response.json()["id"]
+            record_dispatched_job(run_id, quant, job_id)
+            dispatched.append({"quant": quant, "job_id": job_id})
 
     return {
         "dispatched": True,
@@ -137,6 +139,43 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
         "volume_id": volume["id"],
         "jobs": dispatched,
     }
+
+
+def cancel_run(run_id: int) -> dict:
+    """Cancel every still-in-flight RunPod job for a run and mark it
+    cancelled. Best-effort per job -- one job's cancel API call failing
+    (e.g. it already finished) doesn't stop the others from being tried."""
+    import os
+
+    from app.report import jobs_for_run, mark_jobs_cancelled, mark_run_cancelled, run_detail
+
+    if run_detail(run_id) is None:
+        raise UnknownModelError(f"run {run_id} not found")
+
+    runner_endpoint_id = os.environ.get("RUNNER_ENDPOINT_ID")
+    api_key = os.environ.get("RUNPOD_API_KEY")
+    if not runner_endpoint_id or not api_key:
+        raise DispatchConfigError(
+            "cancelling a run requires RUNNER_ENDPOINT_ID and RUNPOD_API_KEY in the "
+            "Orchestrator's environment, same as dispatching one."
+        )
+
+    from app.runpod_jobs import cancel_job
+
+    jobs = jobs_for_run(run_id)
+    cancelled, errors = [], []
+    for job in jobs:
+        try:
+            cancel_job(runner_endpoint_id, job["job_id"])
+            cancelled.append(job["job_id"])
+        except Exception as exc:  # noqa: BLE001 - one bad cancel shouldn't stop the rest
+            errors.append({"job_id": job["job_id"], "error": str(exc)})
+
+    if cancelled:
+        mark_jobs_cancelled(run_id, cancelled)
+    mark_run_cancelled(run_id)
+
+    return {"run_id": run_id, "cancelled": cancelled, "errors": errors}
 
 
 def generate_one(

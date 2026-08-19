@@ -2,9 +2,67 @@
 default:
     @just --list
 
+label := "com.ianscrivener.mflux-orchestrator"
+plist := "/Users/ianscrivener/Library/LaunchAgents/com.ianscrivener.mflux-orchestrator.plist"
+root := justfile_directory()
+
 # Run the fast unit test suite (mocked, no live network calls)
 test:
     .venv/bin/pytest tests/ -q
+
+# Run the Orchestrator locally in the foreground (dev)
+serve:
+    uv run uvicorn app.main:app --reload
+
+# Install + start the Orchestrator as a launchd service (runs at login, restarts on crash,
+# binds 127.0.0.1:8000 only). Logs to logs/orchestrator.{out,err}.log in this repo.
+# Replaces the old orchestrator-local/ standalone-folder approach (_deprecated/) --
+# now runs straight from this checkout, no separate synced copy.
+svc-add:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ root }}/logs"
+    cat > "{{ plist }}" <<PLIST
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>{{ label }}</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Users/ianscrivener/.local/bin/uv</string>
+            <string>run</string>
+            <string>uvicorn</string>
+            <string>app.main:app</string>
+            <string>--host</string>
+            <string>127.0.0.1</string>
+            <string>--port</string>
+            <string>8000</string>
+        </array>
+        <key>WorkingDirectory</key>
+        <string>{{ root }}</string>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>StandardOutPath</key>
+        <string>{{ root }}/logs/orchestrator.out.log</string>
+        <key>StandardErrorPath</key>
+        <string>{{ root }}/logs/orchestrator.err.log</string>
+    </dict>
+    </plist>
+    PLIST
+    launchctl bootstrap "gui/$(id -u)" "{{ plist }}"
+    echo "Installed and started {{ label }} -- http://127.0.0.1:8000 (logs in {{ root }}/logs/)"
+
+# Stop + uninstall the launchd service
+svc-del:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    launchctl bootout "gui/$(id -u)/{{ label }}" 2>/dev/null || true
+    rm -f "{{ plist }}"
+    echo "Removed {{ label }}"
 
 # Hit the live Orchestrator's endpoints and print a one-line summary each
 test-api:
@@ -46,30 +104,3 @@ open:
     url=$(.venv/bin/python3 scripts/resolve_orchestrator_url.py)
     echo "Opening ${url}/docs (will 401 without a Bearer header -- browser can't send one)" >&2
     open "${url}/docs"
-
-# Sync the Orchestrator's code+config to its standalone local runtime folder
-# (/Users/ianscrivener/bin/MFlux_Orchestrator, run there via `uv run uvicorn app.main:app`).
-# Explicit file allowlist, not a wildcard copy of app/ -- so Runner/Flash-only
-# files (runner.py, orchestrator_endpoint.py, runner_endpoint.py) never leak in,
-# even if someone adds more app/*.py later without updating this. Never touches
-# data/reports.sqlite, data/models_hf.json, or .env at the destination -- those
-# are that deployment's own live runtime state/secrets, not source to be
-# overwritten on a sync. orchestrator-local/{justfile,README.md,pyproject.toml}
-# are the hand-authored deployment files (svc-add/svc-del, docs, trimmed deps)
-# -- edit them here, not in the destination, so they stay version-controlled.
-update-orchestrator:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    dest=/Users/ianscrivener/bin/MFlux_Orchestrator
-    mkdir -p "$dest/app" "$dest/configs/models" "$dest/data" "$dest/data-hf-sync"
-    cp app/__init__.py app/main.py app/db.py app/generate.py app/models_hf.py \
-       app/models_missing.py app/models_supported.py app/outbox.py app/report.py \
-       app/runpod_volumes.py app/series_lifecycle.py app/hf_datasets.py \
-       app/runpod_skus.py app/queue_store.py "$dest/app/"
-    rm -f "$dest/configs/models"/*.yaml
-    cp configs/models/*.yaml "$dest/configs/models/"
-    cp configs/overrides.yaml configs/hf_datasets.yaml "$dest/configs/"
-    cp data-hf-sync/models_mflux.json "$dest/data-hf-sync/"
-    cp orchestrator-local/justfile orchestrator-local/README.md orchestrator-local/pyproject.toml "$dest/"
-    cp orchestrator-local/.env.sample "$dest/.env.sample"
-    echo "Synced code+config+deployment files to $dest (data/reports.sqlite, data-hf-sync/models_hf.json, data/.hf_sync_state.json, and .env there were left untouched)"

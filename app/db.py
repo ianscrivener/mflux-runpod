@@ -47,9 +47,23 @@ CREATE TABLE IF NOT EXISTS series_volumes (
     deleted_at          TEXT
 );
 
+-- One row per RunPod job dispatch_trigger actually submits, so a later
+-- cancel can look up job_ids by run_id -- the /generate response is the
+-- only other place a job_id ever appears, and that's gone once the HTTP
+-- response is sent.
+CREATE TABLE IF NOT EXISTS dispatched_jobs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id              INTEGER NOT NULL REFERENCES runs(id),
+    quant               TEXT NOT NULL,
+    job_id              TEXT NOT NULL,
+    dispatched_at       TEXT NOT NULL,
+    cancelled_at        TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_quant_builds_run_id ON quant_builds(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model_series ON runs(model_series);
 CREATE INDEX IF NOT EXISTS idx_series_volumes_model_series ON series_volumes(model_series);
+CREATE INDEX IF NOT EXISTS idx_dispatched_jobs_run_id ON dispatched_jobs(run_id);
 """
 
 

@@ -107,6 +107,20 @@ class GenerateRequest(BaseModel):
     }
 
 
+class QueueEntryRequest(BaseModel):
+    model_stem: str = Field(..., description="Must match a configs/models/{stem}.yaml", examples=["Fibo"])
+    quants: list[str] | None = Field(default=None, description="Omit to mean 'whatever's missing at process time'")
+    force_hf_overwrite: bool = Field(default=False)
+    note: str | None = Field(default=None)
+
+
+class QueueEntryUpdateRequest(BaseModel):
+    status: str | None = Field(default=None, description="pending | approved | skipped")
+    quants: list[str] | None = None
+    force_hf_overwrite: bool | None = None
+    note: str | None = None
+
+
 class GenerateAllRequest(BaseModel):
     dispatch: bool = Field(
         default=False,
@@ -236,6 +250,43 @@ async def models_queue_restore() -> dict:
         return {"error": str(exc)}
 
 
+@orchestrator.get("/models_queue")
+async def models_queue_list() -> dict:
+    from app.queue import list_entries
+
+    return {"entries": list_entries()}
+
+
+@orchestrator.post("/models_queue")
+async def models_queue_add(data: QueueEntryRequest) -> dict:
+    from app.queue import QueueValidationError, add_entry
+
+    try:
+        return add_entry(data.model_stem, data.quants, data.force_hf_overwrite, data.note)
+    except QueueValidationError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.patch("/models_queue/{entry_id}")
+async def models_queue_update(entry_id: int, data: QueueEntryUpdateRequest) -> dict:
+    from app.queue import QueueValidationError, update_entry
+
+    try:
+        return update_entry(entry_id, data.status, data.quants, data.force_hf_overwrite, data.note)
+    except QueueValidationError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.delete("/models_queue/{entry_id}")
+async def models_queue_delete(entry_id: int) -> dict:
+    from app.queue import QueueValidationError, delete_entry
+
+    try:
+        return {"deleted": entry_id, **delete_entry(entry_id)}
+    except QueueValidationError as exc:
+        return {"error": str(exc)}
+
+
 @orchestrator.get("/datasets")
 async def datasets_list() -> dict:
     from app.hf_datasets import list_datasets
@@ -304,6 +355,21 @@ async def generate(data: GenerateRequest) -> dict:
             force_hf_overwrite=data.force_hf_overwrite,
             trigger_fn=trigger_fn,
         )
+    except UnknownModelError as exc:
+        return {"error": str(exc)}
+    except DispatchConfigError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.post("/generate/{run_id}/cancel")
+async def generate_cancel(run_id: int) -> dict:
+    """Best-effort cancel of every still-in-flight RunPod job for this run_id."""
+    from app.db import init_db
+    from app.generate import DispatchConfigError, UnknownModelError, cancel_run
+
+    init_db()
+    try:
+        return cancel_run(run_id)
     except UnknownModelError as exc:
         return {"error": str(exc)}
     except DispatchConfigError as exc:
