@@ -146,14 +146,17 @@ class QueueEntryUpdateRequest(BaseModel):
 
 @app.get("/models_queue", summary="List queue entries")
 def models_queue_list():
-    from app.queue import list_entries
+    from app.queue import QueueStorageError, list_entries
 
-    return {"entries": list_entries()}
+    try:
+        return {"entries": list_entries()}
+    except QueueStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/models_queue", summary="Add a model series to the queue")
 def models_queue_add(request: QueueEntryRequest):
-    from app.queue import QueueValidationError, add_entry
+    from app.queue import QueueStorageError, QueueValidationError, add_entry
 
     try:
         return add_entry(
@@ -161,29 +164,36 @@ def models_queue_add(request: QueueEntryRequest):
         )
     except QueueValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except QueueStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.patch("/models_queue/{entry_id}", summary="Update a queue entry")
 def models_queue_update(entry_id: int, request: QueueEntryUpdateRequest):
-    from app.queue import QueueValidationError, update_entry
+    from app.queue import QueueStorageError, QueueValidationError, update_entry
 
+    # exclude_unset so an omitted JSON field never reaches update_entry --
+    # only fields the caller actually sent get applied, letting quants/note
+    # be explicitly cleared back to null without touching the rest.
     try:
-        return update_entry(
-            entry_id, request.status, request.quants, request.force_hf_overwrite, request.note
-        )
+        return update_entry(entry_id, **request.model_dump(exclude_unset=True))
     except QueueValidationError as exc:
         status = 404 if "no queue entry" in str(exc) else 400
         raise HTTPException(status_code=status, detail=str(exc)) from exc
+    except QueueStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.delete("/models_queue/{entry_id}", summary="Remove a queue entry")
 def models_queue_delete(entry_id: int):
-    from app.queue import QueueValidationError, delete_entry
+    from app.queue import QueueStorageError, QueueValidationError, delete_entry
 
     try:
         return {"deleted": entry_id, **delete_entry(entry_id)}
     except QueueValidationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except QueueStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/datasets", summary="List the seven HF-bucket-backed datasets and their sync state")

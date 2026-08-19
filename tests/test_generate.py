@@ -186,4 +186,9 @@ def test_cancel_run_one_bad_cancel_does_not_stop_the_rest(monkeypatch):
 
     assert outcome["cancelled"] == ["job-ok"]
     assert outcome["errors"] == [{"job_id": "job-fails", "error": "already finished"}]
-    assert run_detail(run_id)["status"] == "cancelled"
+    # Partial failure -- the run must NOT be marked terminally cancelled,
+    # since job-fails might still genuinely be running. It stays in its
+    # prior status so a caller can retry cancel_run() against it.
+    assert run_detail(run_id)["status"] == "running"
+    remaining = {j["quant"]: j["job_id"] for j in jobs_for_run(run_id)}
+    assert remaining == {"q6": "job-fails"}  # still recorded, available to retry

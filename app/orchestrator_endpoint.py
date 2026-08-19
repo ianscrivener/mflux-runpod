@@ -252,38 +252,44 @@ async def models_queue_restore() -> dict:
 
 @orchestrator.get("/models_queue")
 async def models_queue_list() -> dict:
-    from app.queue import list_entries
+    from app.queue import QueueStorageError, list_entries
 
-    return {"entries": list_entries()}
+    try:
+        return {"entries": list_entries()}
+    except QueueStorageError as exc:
+        return {"error": str(exc)}
 
 
 @orchestrator.post("/models_queue")
 async def models_queue_add(data: QueueEntryRequest) -> dict:
-    from app.queue import QueueValidationError, add_entry
+    from app.queue import QueueStorageError, QueueValidationError, add_entry
 
     try:
         return add_entry(data.model_stem, data.quants, data.force_hf_overwrite, data.note)
-    except QueueValidationError as exc:
+    except (QueueValidationError, QueueStorageError) as exc:
         return {"error": str(exc)}
 
 
 @orchestrator.patch("/models_queue/{entry_id}")
 async def models_queue_update(entry_id: int, data: QueueEntryUpdateRequest) -> dict:
-    from app.queue import QueueValidationError, update_entry
+    from app.queue import QueueStorageError, QueueValidationError, update_entry
 
+    # exclude_unset so an omitted JSON field never reaches update_entry --
+    # only fields the caller actually sent get applied, letting quants/note
+    # be explicitly cleared back to null without touching the rest.
     try:
-        return update_entry(entry_id, data.status, data.quants, data.force_hf_overwrite, data.note)
-    except QueueValidationError as exc:
+        return update_entry(entry_id, **data.model_dump(exclude_unset=True))
+    except (QueueValidationError, QueueStorageError) as exc:
         return {"error": str(exc)}
 
 
 @orchestrator.delete("/models_queue/{entry_id}")
 async def models_queue_delete(entry_id: int) -> dict:
-    from app.queue import QueueValidationError, delete_entry
+    from app.queue import QueueStorageError, QueueValidationError, delete_entry
 
     try:
         return {"deleted": entry_id, **delete_entry(entry_id)}
-    except QueueValidationError as exc:
+    except (QueueValidationError, QueueStorageError) as exc:
         return {"error": str(exc)}
 
 

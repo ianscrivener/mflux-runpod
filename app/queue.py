@@ -31,16 +31,34 @@ class QueueValidationError(ValueError):
     """Bad request -- unknown model_stem, unknown status, missing entry."""
 
 
+class QueueStorageError(RuntimeError):
+    """The queue file exists but is unreadable/corrupt/wrong-shaped in a way
+    that isn't the known not-yet-initialized placeholder. Unlike the other
+    HF-synced datasets, models_queue.json is human-authored and can't be
+    regenerated -- silently treating a corrupt file as "empty" (the pattern
+    copied from app.models_hf's genuinely-regenerable cache) would let the
+    next add_entry() overwrite it with a single new entry, permanently
+    losing everything else that was in it. Refuse instead."""
+
+
+_PLACEHOLDER_STUB = {"place": "holder"}
+
+
 def _load() -> dict:
     if not LOCAL_PATH.exists():
         return {"entries": []}
     try:
         data = json.loads(LOCAL_PATH.read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        raise QueueStorageError(f"{LOCAL_PATH} exists but isn't readable/valid JSON: {exc}") from exc
+    if data == _PLACEHOLDER_STUB:
         return {"entries": []}
     if "entries" not in data or not isinstance(data["entries"], list):
-        # Covers the {"place": "holder"} stub this file started life as.
-        return {"entries": []}
+        raise QueueStorageError(
+            f"{LOCAL_PATH} doesn't have the expected {{'entries': [...]}} shape and "
+            "isn't the known placeholder stub -- refusing to silently treat this as "
+            "an empty queue"
+        )
     return data
 
 
@@ -56,18 +74,22 @@ def _save(data: dict) -> None:
 
 def _publish() -> dict:
     """Best-effort: the local write above already succeeded and is the
-    thing the caller actually asked for, so a durable-publish failure
-    (DO Spaces/HF not configured, e.g. local dev) must not fail the whole
-    CRUD call -- confirmed live, 2026-08-19: an unconfigured DO_SPACES_*
-    turned every add/update/delete into a raw 500 despite the local file
-    being written correctly."""
-    from app.hf_datasets import HfDatasetConfigError
-    from app.queue_store import QueueStoreConfigError, publish
+    thing the caller actually asked for, so a durable-publish failure must
+    not fail the whole CRUD call -- confirmed live, 2026-08-19: an
+    unconfigured DO_SPACES_* turned every add/update/delete into a raw 500
+    despite the local file being written correctly. Catches broadly, not
+    just the two "not configured at all" error classes -- wrong credentials,
+    a network blip, or an HF/DO API error would otherwise hit this exact
+    same failure mode."""
+    import logging
+
+    from app.queue_store import publish
 
     try:
         publish()
         return {"published": True}
-    except (QueueStoreConfigError, HfDatasetConfigError) as exc:
+    except Exception as exc:  # noqa: BLE001 - any publish failure degrades, never raises
+        logging.getLogger(__name__).warning("queue publish failed: %s", exc)
         return {"published": False, "publish_error": str(exc)}
 
 
@@ -106,26 +128,34 @@ def add_entry(
     return entry
 
 
+UNSET = object()
+"""Sentinel distinguishing 'field omitted' from 'field explicitly set to
+None' in update_entry -- plain None can't do this, since None is also the
+legitimate value for clearing quants/note back to null. Route layers should
+pass request.model_dump(exclude_unset=True) so an omitted JSON field never
+reaches update_entry at all, rather than arriving as None."""
+
+
 def update_entry(
     entry_id: int,
-    status: str | None = None,
-    quants: list[str] | None = None,
-    force_hf_overwrite: bool | None = None,
-    note: str | None = None,
+    status=UNSET,
+    quants=UNSET,
+    force_hf_overwrite=UNSET,
+    note=UNSET,
 ) -> dict:
-    if status is not None and status not in VALID_STATUSES:
+    if status is not UNSET and status is not None and status not in VALID_STATUSES:
         raise QueueValidationError(f"status must be one of {VALID_STATUSES}, got {status!r}")
 
     data = _load()
     for entry in data["entries"]:
         if entry["id"] == entry_id:
-            if status is not None:
+            if status is not UNSET:
                 entry["status"] = status
-            if quants is not None:
+            if quants is not UNSET:
                 entry["quants"] = quants
-            if force_hf_overwrite is not None:
+            if force_hf_overwrite is not UNSET:
                 entry["force_hf_overwrite"] = force_hf_overwrite
-            if note is not None:
+            if note is not UNSET:
                 entry["note"] = note
             _save(data)
             entry.update(_publish())

@@ -130,7 +130,27 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
             )
             response.raise_for_status()
             job_id = response.json()["id"]
-            record_dispatched_job(run_id, quant, job_id)
+            try:
+                record_dispatched_job(run_id, quant, job_id)
+            except Exception as exc:
+                # The job IS live on RunPod at this point -- losing the local
+                # record would make it an unrecoverable orphan (cancel_run
+                # can only find jobs via dispatched_jobs). Best-effort cancel
+                # it immediately rather than leaving it running unaccounted
+                # for, then surface the original failure loudly rather than
+                # silently continuing to dispatch more jobs.
+                from app.runpod_jobs import cancel_job
+
+                cancel_error = None
+                try:
+                    cancel_job(runner_endpoint_id, job_id)
+                except Exception as cancel_exc:  # noqa: BLE001
+                    cancel_error = str(cancel_exc)
+                raise RuntimeError(
+                    f"dispatched {model_series}/{quant} (job {job_id}) but failed to "
+                    f"record it locally: {exc}. Emergency cancel "
+                    f"{'succeeded' if cancel_error is None else f'also failed: {cancel_error}'}."
+                ) from exc
             dispatched.append({"quant": quant, "job_id": job_id})
 
     return {
@@ -173,7 +193,13 @@ def cancel_run(run_id: int) -> dict:
 
     if cancelled:
         mark_jobs_cancelled(run_id, cancelled)
-    mark_run_cancelled(run_id)
+    # Only mark the run terminally cancelled if every job actually was --
+    # a partial failure could mean a job is still genuinely running (not
+    # just "already finished"), so leave the run in its current status and
+    # let a caller retry cancel_run() against the still-recorded failures
+    # rather than lying that everything stopped.
+    if not errors:
+        mark_run_cancelled(run_id)
 
     return {"run_id": run_id, "cancelled": cancelled, "errors": errors}
 

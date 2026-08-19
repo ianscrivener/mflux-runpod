@@ -3,7 +3,7 @@ default:
     @just --list
 
 label := "com.ianscrivener.mflux-orchestrator"
-plist := "/Users/ianscrivener/Library/LaunchAgents/com.ianscrivener.mflux-orchestrator.plist"
+plist := env_var('HOME') + "/Library/LaunchAgents/com.ianscrivener.mflux-orchestrator.plist"
 root := justfile_directory()
 
 # Run the fast unit test suite (mocked, no live network calls)
@@ -22,6 +22,13 @@ svc-add:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "{{ root }}/logs"
+    uv_bin="$(command -v uv)"
+    # Boot out any existing registration first so re-running svc-add (e.g.
+    # to pick up a plist change) doesn't fail on "already bootstrapped" --
+    # tolerate "not currently loaded" (the common case), but only that.
+    if launchctl list "{{ label }}" >/dev/null 2>&1; then
+        launchctl bootout "gui/$(id -u)/{{ label }}"
+    fi
     cat > "{{ plist }}" <<PLIST
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -31,7 +38,7 @@ svc-add:
         <string>{{ label }}</string>
         <key>ProgramArguments</key>
         <array>
-            <string>/Users/ianscrivener/.local/bin/uv</string>
+            <string>$uv_bin</string>
             <string>run</string>
             <string>uvicorn</string>
             <string>app.main:app</string>
@@ -60,7 +67,11 @@ svc-add:
 svc-del:
     #!/usr/bin/env bash
     set -euo pipefail
-    launchctl bootout "gui/$(id -u)/{{ label }}" 2>/dev/null || true
+    # Only skip bootout for the expected "not currently loaded" case (nothing
+    # to remove) -- a real launchctl failure (e.g. permissions) still aborts.
+    if launchctl list "{{ label }}" >/dev/null 2>&1; then
+        launchctl bootout "gui/$(id -u)/{{ label }}"
+    fi
     rm -f "{{ plist }}"
     echo "Removed {{ label }}"
 
