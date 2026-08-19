@@ -8,10 +8,10 @@ FastAPI app that scans the MFlux-supported models list against the
 `ARCHITECTURE.md` for the full picture.
 
 **This folder is a deployment, not the source repo.** `app/*.py` and
-`configs/*.yaml` here are copies, kept in sync by running `just
+`configs/models/*.yaml` here are copies, kept in sync by running `just
 update-orchestrator` from the `mflux-runpod` checkout -- don't hand-edit them
 here, they'll be overwritten on the next sync. `data/reports.sqlite` and
-`data/models_hf.json` are this deployment's own live runtime state and are
+`data-hf-sync/models_hf.json` are this deployment's own live runtime state and are
 never touched by that sync.
 
 ## Layout
@@ -22,9 +22,10 @@ app/                  Orchestrator-only routes/logic (no GPU/mflux/Flash code)
   db.py, generate.py, models_hf.py, models_missing.py, models_supported.py,
   outbox.py, report.py, runpod_volumes.py, series_lifecycle.py
 
-configs/*.yaml         Per-model build config -- source of truth for what's buildable
-data/models_mflux.json Full MFlux-supported model catalog
-data/models_hf.json    Cache of what's published on the HF org (runtime state)
+configs/models/*.yaml   Per-model build config -- source of truth for what's buildable
+configs/overrides.yaml, configs/hf_datasets.yaml   Singleton configs, siblings of models/
+data-hf-sync/models_mflux.json Full MFlux-supported model catalog
+data-hf-sync/models_hf.json    Cache of what's published on the HF org (runtime state)
 data/reports.sqlite    Run/quant-build history (runtime state)
 
 pyproject.toml         Trimmed deps -- fastapi/uvicorn/pyyaml/huggingface-hub/httpx/boto3.
@@ -96,6 +97,7 @@ From the `mflux-runpod` checkout:
 just update-orchestrator
 ```
 
-Copies the allowlisted `app/*.py` files, `configs/*.yaml`, and
-`data/models_mflux.json` here. Never touches `data/reports.sqlite` or
-`data/models_hf.json`.
+Copies the allowlisted `app/*.py` files, `configs/models/*.yaml` plus
+`configs/overrides.yaml`/`configs/hf_datasets.yaml`, and
+`data-hf-sync/models_mflux.json` here. Never touches `data/reports.sqlite` or
+`data-hf-sync/models_hf.json`.

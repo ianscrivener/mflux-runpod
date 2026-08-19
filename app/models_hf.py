@@ -14,7 +14,7 @@ from pathlib import Path
 DATA_PATH = Path(
     os.environ.get(
         "MODELS_HF_PATH",
-        Path(__file__).resolve().parent.parent / "data" / "models_hf.json",
+        Path(__file__).resolve().parent.parent / "data-hf-sync" / "models_hf.json",
     )
 )
 HF_ORG = os.environ.get("HF_ORG", "mflux-community")
@@ -112,4 +112,9 @@ def update_models_hf(organization: str | None = None, data_path: Path | None = N
     # (e.g. from the Endpoint's env) rather than frozen at import.
     manifest = scan_models_hf(organization or HF_ORG)
     write_models_hf(manifest, data_path)
+
+    from app.hf_datasets import push
+
+    push("models_hf")
+
     return manifest

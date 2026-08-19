@@ -1,9 +1,10 @@
 """Missing models diff (PRD: /models_missing).
 
-A model series is "supported" only once it has a configs/*.yaml file (that's what
-defines its buildable quants list and Runner build metadata). Series present in
-data/models_mflux.json but without a config are not yet buildable and are excluded
-here, though they still show up under /models_supported.
+A model series is "supported" only once it has a configs/models/*.yaml file
+(that's what defines its buildable quants list and Runner build metadata).
+Series present in data-hf-sync/models_mflux.json but without a config are not
+yet buildable and are excluded here, though they still show up under
+/models_supported.
 
 A series is missing a quant if mflux-community/{slug}-mflux-{quant} isn't in the
 current models_hf.json manifest. A series is "complete" only when every quant in
@@ -14,13 +15,18 @@ missing list regardless of HF state, or force-exclude it regardless of missing
 quants.
 """
 
+import json
 import re
+import tempfile
 from pathlib import Path
 
 import yaml
 
-CONFIGS_DIR = Path(__file__).resolve().parent.parent / "configs"
-OVERRIDES_PATH = CONFIGS_DIR / "overrides.yaml"
+MODELS_MISSING_PATH = Path(__file__).resolve().parent.parent / "data-hf-sync" / "models_missing.json"
+
+CONFIGS_ROOT = Path(__file__).resolve().parent.parent / "configs"
+CONFIGS_DIR = CONFIGS_ROOT / "models"
+OVERRIDES_PATH = CONFIGS_ROOT / "overrides.yaml"
 HF_ORG = "mflux-community"
 
 
@@ -29,13 +35,16 @@ def slugify(name: str) -> str:
 
 
 def load_configs(configs_dir: Path = CONFIGS_DIR) -> dict[str, dict]:
-    """Return {config_stem: config_dict} for every configs/*.yaml file (excludes overrides.yaml)."""
-    configs = {}
-    for path in sorted(configs_dir.glob("*.yaml")):
-        if path.name == "overrides.yaml":
-            continue
-        configs[path.stem] = yaml.safe_load(path.read_text())
-    return configs
+    """Return {config_stem: config_dict} for every configs/models/*.yaml file.
+    Nothing to exclude here anymore -- overrides.yaml, hf_datasets.yaml, and
+    runpod.yaml all live as siblings of models/, not inside it, specifically
+    so this glob can never again pick up a non-model config by accident
+    (confirmed live 2026-08-19: hf_datasets.yaml briefly living directly
+    under configs/ broke this exact function)."""
+    return {
+        path.stem: yaml.safe_load(path.read_text())
+        for path in sorted(configs_dir.glob("*.yaml"))
+    }
 
 
 def load_overrides(overrides_path: Path = OVERRIDES_PATH) -> dict:
@@ -99,3 +108,26 @@ def compute_missing(
             complete.append(stem)
 
     return {"missing": missing, "complete": complete}
+
+
+def refresh_models_missing() -> dict:
+    """Materialize the current compute_missing() result to data-hf-sync/models_missing.json
+    and publish it to the HF bucket (app.hf_datasets) -- a snapshot for anyone
+    consuming the bucket directly, not the live read path. GET /models_missing
+    stays fully live-computed; this is purely a publish-on-demand action."""
+    from app.hf_datasets import push
+    from app.models_hf import load_models_hf
+
+    result = compute_missing(load_configs(), load_models_hf(), load_overrides())
+
+    MODELS_MISSING_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=MODELS_MISSING_PATH.parent, delete=False
+    ) as tmp:
+        json.dump(result, tmp, indent=2)
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(MODELS_MISSING_PATH)
+
+    push("models_missing")
+
+    return result

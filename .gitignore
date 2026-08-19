@@ -16,7 +16,11 @@ HF_CACHE
 
 # Generated at runtime, not source
 data/reports.sqlite
-data/models_hf.json
+data/.hf_sync_state.json
+# The seven HF-bucket-synced datasets (see hf_datasets.yaml) -- all
+# regenerable via `pull()`/the app's own refresh triggers, no need for git
+# history on top of what the HF bucket already keeps.
+data-hf-sync/
 .flash/
 
 # NOT excluded from git (already tracked -- this entry only stops Flash's
@@ -51,3 +55,4 @@ z_*.*
 # notice, a hard deploy failure. None of these are Flash resources anyway.
 scripts/
 zz_generate.sh
+zz_scratch.txt

@@ -81,10 +81,25 @@ def test_compute_missing_all_missing_when_hf_empty(sample_configs):
     assert result["complete"] == []
 
 
-def test_load_configs_excludes_overrides_yaml(tmp_path):
-    configs_dir = tmp_path / "configs"
+def test_configs_dir_and_overrides_path_are_siblings_not_nested():
+    """overrides.yaml (and hf_datasets.yaml/runpod.yaml) live as siblings of
+    configs/models/, not inside it -- that's what stops load_configs()'s glob
+    from ever picking up a non-model config by accident (it did, once, when
+    hf_datasets.yaml briefly lived directly under configs/ -- see
+    app.models_missing's module docstring)."""
+    from app.models_missing import CONFIGS_DIR, CONFIGS_ROOT, OVERRIDES_PATH
+
+    assert CONFIGS_DIR == CONFIGS_ROOT / "models"
+    assert OVERRIDES_PATH == CONFIGS_ROOT / "overrides.yaml"
+    assert OVERRIDES_PATH.parent == CONFIGS_DIR.parent
+
+
+def test_load_configs_reads_every_yaml_in_the_given_dir(tmp_path):
+    """No special-casing needed anymore -- load_configs() just loads
+    whatever *.yaml is in the directory it's pointed at. In production
+    that's always configs/models/, which never contains overrides.yaml."""
+    configs_dir = tmp_path / "models"
     configs_dir.mkdir()
-    (configs_dir / "overrides.yaml").write_text("force_include: []\nforce_exclude: []\n")
     (configs_dir / "Fibo.yaml").write_text(
         yaml.safe_dump(
             {

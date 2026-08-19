@@ -191,6 +191,78 @@ async def models_missing() -> dict:
     return compute_missing(configs, hf_manifest, overrides)
 
 
+@orchestrator.post("/models_missing/update")
+async def models_missing_update() -> dict:
+    """GET /models_missing stays live-computed -- this snapshots that same
+    result to data-hf-sync/models_missing.json and publishes it to the HF bucket."""
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_missing import refresh_models_missing
+
+    try:
+        return refresh_models_missing()
+    except HfDatasetConfigError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.post("/runpod_gpu_skus/update")
+async def runpod_gpu_skus_update() -> dict:
+    from app.hf_datasets import HfDatasetConfigError
+    from app.runpod_skus import RunpodSkusConfigError, refresh_gpu_skus
+
+    try:
+        return {"gpus": refresh_gpu_skus()}
+    except (RunpodSkusConfigError, HfDatasetConfigError) as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.post("/models_queue/publish")
+async def models_queue_publish() -> dict:
+    from app.hf_datasets import HfDatasetConfigError
+    from app.queue_store import QueueStoreConfigError, publish
+
+    try:
+        return publish()
+    except (QueueStoreConfigError, HfDatasetConfigError) as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.post("/models_queue/restore")
+async def models_queue_restore() -> dict:
+    from app.queue_store import QueueStoreConfigError, restore
+
+    try:
+        return restore()
+    except QueueStoreConfigError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.get("/datasets")
+async def datasets_list() -> dict:
+    from app.hf_datasets import list_datasets
+
+    return {"datasets": list_datasets()}
+
+
+@orchestrator.post("/datasets/{name}/pull")
+async def datasets_pull(name: str) -> dict:
+    from app.hf_datasets import HfDatasetConfigError, pull
+
+    try:
+        return pull(name)
+    except HfDatasetConfigError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.post("/datasets/{name}/push")
+async def datasets_push(name: str) -> dict:
+    from app.hf_datasets import HfDatasetConfigError, push
+
+    try:
+        return push(name)
+    except HfDatasetConfigError as exc:
+        return {"error": str(exc)}
+
+
 @orchestrator.get("/model_store")
 async def model_store() -> dict:
     """List currently-active ephemeral per-series build volumes -- see

@@ -84,6 +84,80 @@ def models_missing():
     return compute_missing(configs, hf_manifest, overrides)
 
 
+@app.post("/models_missing/update", summary="Materialize + publish the current missing-models diff")
+def models_missing_update():
+    """GET /models_missing stays live-computed -- this snapshots that same
+    result to data-hf-sync/models_missing.json and publishes it to the HF bucket, for
+    anything consuming the bucket directly instead of calling the API."""
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_missing import refresh_models_missing
+
+    try:
+        return refresh_models_missing()
+    except HfDatasetConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/runpod_gpu_skus/update", summary="Refresh RunPod GPU pricing and publish it")
+def runpod_gpu_skus_update():
+    from app.hf_datasets import HfDatasetConfigError
+    from app.runpod_skus import RunpodSkusConfigError, refresh_gpu_skus
+
+    try:
+        return {"gpus": refresh_gpu_skus()}
+    except (RunpodSkusConfigError, HfDatasetConfigError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/models_queue/publish", summary="Save local models_queue.json as the DO Spaces master + refresh the HF mirror")
+def models_queue_publish():
+    from app.hf_datasets import HfDatasetConfigError
+    from app.queue_store import QueueStoreConfigError, publish
+
+    try:
+        return publish()
+    except (QueueStoreConfigError, HfDatasetConfigError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/models_queue/restore", summary="Overwrite local models_queue.json from the DO Spaces master")
+def models_queue_restore():
+    from app.queue_store import QueueStoreConfigError, restore
+
+    try:
+        return restore()
+    except QueueStoreConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/datasets", summary="List the seven HF-bucket-backed datasets and their sync state")
+def datasets_list():
+    from app.hf_datasets import list_datasets
+
+    return {"datasets": list_datasets()}
+
+
+@app.post("/datasets/{name}/pull", summary="Pull one dataset from the HF bucket if it changed")
+def datasets_pull(name: str):
+    from app.hf_datasets import HfDatasetConfigError, pull
+
+    try:
+        return pull(name)
+    except HfDatasetConfigError as exc:
+        raise HTTPException(status_code=404 if "no such dataset" in str(exc) else 503, detail=str(exc)) from exc
+
+
+@app.post("/datasets/{name}/push", summary="Push one dataset's local file to the HF bucket")
+def datasets_push(name: str):
+    from app.hf_datasets import HfDatasetConfigError, push
+
+    try:
+        return push(name)
+    except HfDatasetConfigError as exc:
+        status = 404 if "no such dataset" in str(exc) else 400 if "not writable" in str(exc) else 503
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
 @app.get("/model_store")
 def model_store():
     """List currently-active ephemeral per-series build volumes (NOT the

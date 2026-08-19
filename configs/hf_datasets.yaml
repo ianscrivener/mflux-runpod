@@ -1,0 +1,47 @@
+# HF bucket locations for the Orchestrator's durable state (2026-08-19 design).
+#
+# All seven datasets live in the same HF bucket (hf://buckets/mflux-community/ci)
+# -- write access is restricted to the three MFlux admins, per the user, and
+# revisiting that boundary (e.g. splitting models_queue out to a private bucket)
+# is a deferred security-audit item, not something this file should preempt.
+#
+# writable: false means we only ever pull it, never push -- models_mflux.json is
+# owned by the upstream mflux CI pipeline, which publishes it into this same
+# bucket; overwriting it here would fight that pipeline.
+bucket_id: mflux-community/ci
+
+datasets:
+  models_mflux:
+    path_in_repo: models_mflux.json
+    local_path: data-hf-sync/models_mflux.json
+    writable: false
+
+  models_hf:
+    path_in_repo: models_hf.json
+    local_path: data-hf-sync/models_hf.json
+    writable: true
+
+  models_missing:
+    path_in_repo: models_missing.json
+    local_path: data-hf-sync/models_missing.json
+    writable: true
+
+  runpod_gpu_skus:
+    path_in_repo: runpod_gpu_skus.json
+    local_path: data-hf-sync/runpod_gpu_skus.json
+    writable: true
+
+  logs_devops:
+    path_in_repo: logs/devops.jsonl
+    local_path: data-hf-sync/logs/devops.jsonl
+    writable: true
+
+  logs_conversions:
+    path_in_repo: logs/conversions.jsonl
+    local_path: data-hf-sync/logs/conversions.jsonl
+    writable: true
+
+  models_queue:
+    path_in_repo: models_queue.json
+    local_path: data-hf-sync/models_queue.json
+    writable: true

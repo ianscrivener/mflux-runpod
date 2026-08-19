@@ -7,7 +7,7 @@ replaces this with a live scan of the MFlux GitHub repo.
 import json
 from pathlib import Path
 
-DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "models_mflux.json"
+DATA_PATH = Path(__file__).resolve().parent.parent / "data-hf-sync" / "models_mflux.json"
 
 
 def load_models_supported(data_path: Path = DATA_PATH) -> dict:

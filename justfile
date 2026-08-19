@@ -61,12 +61,14 @@ update-orchestrator:
     #!/usr/bin/env bash
     set -euo pipefail
     dest=/Users/ianscrivener/bin/MFlux_Orchestrator
-    mkdir -p "$dest/app" "$dest/configs" "$dest/data"
+    mkdir -p "$dest/app" "$dest/configs/models" "$dest/data" "$dest/data-hf-sync"
     cp app/__init__.py app/main.py app/db.py app/generate.py app/models_hf.py \
        app/models_missing.py app/models_supported.py app/outbox.py app/report.py \
-       app/runpod_volumes.py app/series_lifecycle.py "$dest/app/"
-    cp configs/*.yaml "$dest/configs/"
-    cp data/models_mflux.json "$dest/data/"
+       app/runpod_volumes.py app/series_lifecycle.py app/hf_datasets.py \
+       app/runpod_skus.py app/queue_store.py "$dest/app/"
+    cp configs/models/*.yaml "$dest/configs/models/"
+    cp configs/overrides.yaml configs/hf_datasets.yaml "$dest/configs/"
+    cp data-hf-sync/models_mflux.json "$dest/data-hf-sync/"
     cp orchestrator-local/justfile orchestrator-local/README.md orchestrator-local/pyproject.toml "$dest/"
     cp orchestrator-local/.env.sample "$dest/.env.sample"
     echo "Synced code+config+deployment files to $dest (data/reports.sqlite, data/models_hf.json, and .env there were left untouched)"

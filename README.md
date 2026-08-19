@@ -23,23 +23,25 @@ Two services:
 app/                  Orchestrator FastAPI app
   main.py             API routes
   db.py               SQLite schema (runs, quant_builds) for /report
-  models_supported.py /models_supported — reads data/models_mflux.json
+  models_supported.py /models_supported — reads data-hf-sync/models_mflux.json
   models_hf.py         /models_hf, /models_hf/update — scans the mflux-community HF org
-  models_missing.py    /models_missing — diffs configs/*.yaml against models_hf.json
+  models_missing.py    /models_missing — diffs configs/models/*.yaml against models_hf.json
 
-configs/*.yaml         Per-model build config (model_object, model_config, quants, collection).
+configs/models/*.yaml  Per-model build config (model_object, model_config, quants, collection).
                         Only models with a config here are eligible for /models_missing and
-                        generation — configs/, not data/models_mflux.json, is the source of
-                        truth for what's buildable.
+                        generation — configs/models/, not data-hf-sync/models_mflux.json, is the
+                        source of truth for what's buildable.
+configs/overrides.yaml  Manual force_include/force_exclude overrides for /models_missing.
+configs/hf_datasets.yaml  HF-bucket sync locations for the seven datasets (app/hf_datasets.py).
 
-data/models_mflux.json Snapshot of models supported by MFlux (full catalog, task 1 placeholder
+data-hf-sync/models_mflux.json Snapshot of models supported by MFlux (full catalog, task 1 placeholder
                         for a live GitHub scan).
-data/models_hf.json    Generated manifest of what's currently published on the HF org.
+data-hf-sync/models_hf.json    Generated manifest of what's currently published on the HF org.
 
 tests/                 pytest suite
 
 PRD.md                 Full product/design spec
-runpod.yaml             Sample RunPod Flash machine config (CPU orchestrator, GPU runner)
+configs/runpod.yaml     Sample RunPod Flash machine config (CPU orchestrator, GPU runner)
 z_ToDo.txt              Task list / build order
 ```
 
