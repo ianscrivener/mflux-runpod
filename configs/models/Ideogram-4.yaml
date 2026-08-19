@@ -6,7 +6,6 @@ quants:
   - q4
   - q6
   - q8
-  - bf16
 collection:
   name: Ideogram 4
   description: MFlux quantized builds of Ideogram 4

@@ -8,5 +8,5 @@ quants:
   - bf16
 collection:
   name: Fibo-lite
-  description: MFlux quantized builds of Fibe-lite
+  description: MFlux quantized builds of Fibo-lite
   version: 1.0.0

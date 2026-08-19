@@ -13,8 +13,9 @@ scale-to-zero) does the actual work — one job builds and uploads exactly one
 quantized variant of one model. The two never talk to each other directly for
 results: the Runner drops its result into a DigitalOcean Spaces bucket (a durable
 "outbox"), and the Orchestrator picks it up whenever it next polls. Hugging Face is
-the permanent model store; RunPod Network Volumes are purely scratch space that
-gets deleted once a model series is fully published.
+the permanent model store; the *per-series* ephemeral RunPod Network Volumes are
+purely scratch space that gets deleted once that model series is fully published
+(the Orchestrator's own NetworkVolume is persistent — see Storage tiers below).
 
 ## Components
 
@@ -194,11 +195,11 @@ of magnitude larger than others (e.g. Fibo).
 
 `configs/models/*.yaml` is the single source of truth for "what can be built" — a model
 present in `data-hf-sync/models_mflux.json` (the full MFlux-supported catalog) but with no
-matching `configs/{stem}.yaml` is invisible to `/models_missing` and `/generate`,
+matching `configs/models/{stem}.yaml` is invisible to `/models_missing` and `/generate`,
 even though it still shows up under `/models_supported`.
 
 ```yaml
-# configs/Fibo.yaml
+# configs/models/Fibo.yaml
 model_object: FIBO            # mflux class name, resolved under mflux.models
 model_config: fibo            # ModelConfig factory method name
 hf_model_name: briaai/FIBO    # upstream source repo on HF

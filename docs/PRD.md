@@ -1,5 +1,13 @@
 # PRD
 
+**This is the original design intent, not a description of the live system** —
+several things described here have since changed (e.g. the GPU Runner is a
+Docker QUEUE endpoint with baked deps and a DO Spaces outbox for results, not
+a per-run `mflux` install with a direct callback; some listed API endpoints,
+like `/ping` and `/models_supported/update`, were never built or were later
+removed). See [ARCHITECTURE.md](ARCHITECTURE.md) for what's actually deployed
+today.
+
 Two RunPod Flash services that convert and quantize AI models for MFlux, and keep the
 `mflux-community` Hugging Face organization in sync. This replaces an earlier Modal-based
 implementation (see `hf-mflux-community` repo) that became too expensive to run.

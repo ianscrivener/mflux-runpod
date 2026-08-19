@@ -1,5 +1,15 @@
 # HF-hosted dataset sync layer
 
+**Superseded by the actual implementation** — this captures the design
+discussion as it stood mid-session, before two later course corrections: all
+seven datasets ended up in the single shared bucket `hf://buckets/
+mflux-community/ci` (not the `cleverheart2026/mflux-orchestrator-state`/
+`-queue` split below), and `models_queue`'s real master is DO Spaces
+(`app/queue_store.py`), with the HF bucket copy as a throwaway mirror. See
+[ARCHITECTURE.md](ARCHITECTURE.md)'s "HF-bucket datasets" section for the
+current, authoritative design, and local paths are `data-hf-sync/...`, not
+`data/...`.
+
 ### Context
 
 Across this session we designed a shift in where the Orchestrator's state

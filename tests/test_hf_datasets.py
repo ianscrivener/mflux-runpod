@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -64,6 +65,8 @@ def test_pull_downloads_on_change(monkeypatch, tmp_path):
 
     def fake_download_bucket_files(bucket_id, files, token=None, raise_on_missing_files=False):
         downloaded.append(files)
+        for _remote_path, dest in files:
+            Path(dest).write_text("{}")
 
     monkeypatch.setattr("huggingface_hub.get_bucket_paths_info", fake_get_bucket_paths_info)
     monkeypatch.setattr("huggingface_hub.download_bucket_files", fake_download_bucket_files)

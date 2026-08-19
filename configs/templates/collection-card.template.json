@@ -1,0 +1,14 @@
+{
+    "variable_description": [
+        "model_name"
+    ],
+    "title":{
+        "template": "$model_name",
+        "description": "The title of the HF Collection card.",
+    },
+    "slug":{
+        "template": "MFlux quantized builds of $model_name",
+        "description": "The slug (tagline) for the HF Collection card."
+    }
+
+}

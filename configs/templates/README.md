@@ -5,8 +5,10 @@ Placeholder for the collection/model-card templating work discussed
 eventually per-model HF model-card content) from a template instead of
 hand-duplicating near-identical text across every `configs/models/*.yaml`
 file — verified live that description/version already follow one fixed
-pattern in 20/21 configs, with the 2 exceptions being typos, not real
-customization.
+pattern exactly in 19/21 configs; the other 2 each have a single-field
+mismatch, and both are typos, not real customization: `Fibo-Edit-RMBG.yaml`
+(`version: 1.0` instead of `1.0.0`) and `Fibo-lite.yaml` (description text
+doesn't match the template).
 
 Planned:
 

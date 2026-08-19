@@ -66,9 +66,10 @@ update-orchestrator:
        app/models_missing.py app/models_supported.py app/outbox.py app/report.py \
        app/runpod_volumes.py app/series_lifecycle.py app/hf_datasets.py \
        app/runpod_skus.py app/queue_store.py "$dest/app/"
+    rm -f "$dest/configs/models"/*.yaml
     cp configs/models/*.yaml "$dest/configs/models/"
     cp configs/overrides.yaml configs/hf_datasets.yaml "$dest/configs/"
     cp data-hf-sync/models_mflux.json "$dest/data-hf-sync/"
     cp orchestrator-local/justfile orchestrator-local/README.md orchestrator-local/pyproject.toml "$dest/"
     cp orchestrator-local/.env.sample "$dest/.env.sample"
-    echo "Synced code+config+deployment files to $dest (data/reports.sqlite, data/models_hf.json, and .env there were left untouched)"
+    echo "Synced code+config+deployment files to $dest (data/reports.sqlite, data-hf-sync/models_hf.json, data/.hf_sync_state.json, and .env there were left untouched)"

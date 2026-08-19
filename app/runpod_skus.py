@@ -38,10 +38,15 @@ def _headers() -> dict:
 
 
 def fetch_gpu_skus(client: httpx.Client | None = None) -> list[dict]:
+    owns_client = client is None
     client = client or httpx.Client(timeout=REQUEST_TIMEOUT)
-    response = client.get(RUNPOD_GPU_CATALOG_URL, headers=_headers())
-    response.raise_for_status()
-    return response.json()["gpus"]
+    try:
+        response = client.get(RUNPOD_GPU_CATALOG_URL, headers=_headers())
+        response.raise_for_status()
+        return response.json()["gpus"]
+    finally:
+        if owns_client:
+            client.close()
 
 
 def write_gpu_skus(skus: list[dict], data_path: Path | None = None) -> None:

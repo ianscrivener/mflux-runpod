@@ -51,6 +51,18 @@ def load_dataset_config() -> dict:
         return yaml.safe_load(f)
 
 
+def _local_path(entry: dict) -> Path:
+    """Resolve entry['local_path'] against the repo root (CONFIG_PATH's
+    grandparent), not the process's current working directory -- matches
+    the file-relative-path convention every other app/*.py module already
+    uses (models_hf.py, models_supported.py, queue_store.py, runpod_skus.py),
+    so pull()/push() find the same file regardless of what cwd the
+    Orchestrator happens to be launched from. Absolute paths pass through
+    unchanged."""
+    path = Path(entry["local_path"])
+    return path if path.is_absolute() else CONFIG_PATH.parent.parent / path
+
+
 def _dataset(name: str) -> tuple[str, dict]:
     config = load_dataset_config()
     entry = config.get("datasets", {}).get(name)
@@ -99,7 +111,7 @@ def list_datasets() -> list[dict]:
     state = _load_sync_state()
     result = []
     for name, entry in config.get("datasets", {}).items():
-        local_path = Path(entry["local_path"])
+        local_path = _local_path(entry)
         result.append({
             "name": name,
             "bucket_id": config["bucket_id"],
@@ -126,7 +138,7 @@ def pull(name: str) -> dict:
 
     bucket_id, entry = _dataset(name)
     path_in_repo = entry["path_in_repo"]
-    local_path = Path(entry["local_path"])
+    local_path = _local_path(entry)
     token = _token()
 
     files = list(get_bucket_paths_info(bucket_id, [path_in_repo], token=token))
@@ -138,7 +150,11 @@ def pull(name: str) -> dict:
 
     state = _load_sync_state()
     previous = state.get(name, {})
-    changed = previous.get("xet_hash") != remote.xet_hash
+    # Also re-download if the local file is simply gone -- the sync-state
+    # hash matching doesn't mean the file survived (e.g. a fresh checkout,
+    # or someone deleted data-hf-sync/ but not .hf_sync_state.json). That's
+    # exactly the "ephemeral Orchestrator" scenario this module exists for.
+    changed = previous.get("xet_hash") != remote.xet_hash or not local_path.exists()
 
     if changed:
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,7 +181,7 @@ def push(name: str) -> dict:
         raise HfDatasetConfigError(f"{name!r} is not writable (owned by another pipeline)")
 
     path_in_repo = entry["path_in_repo"]
-    local_path = Path(entry["local_path"])
+    local_path = _local_path(entry)
     if not local_path.exists():
         raise HfDatasetConfigError(f"{local_path} does not exist -- nothing to push")
     token = _token()

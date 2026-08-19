@@ -1,9 +1,16 @@
 
 
+**Historical build log** — entries below are dated milestones, not a current-state
+description. In particular, items 14/20 (`mflux-runner`/`mflux-runner-health` as
+Flash `@Endpoint`s) describe the *original* Runner deployment; Flash's Runner
+endpoints have since been retired in favor of a Docker QUEUE endpoint — see
+[ARCHITECTURE.md](ARCHITECTURE.md)'s "GPU Runner" section for the current,
+authoritative path.
+
 # Tasks
 
 0.  ✅ Core structure and SQLite database
-1.  ✅ use `data/models_mflux.json` for now (/models_supported)
+1.  ✅ use `data-hf-sync/models_mflux.json` for now (/models_supported)
 2.  ✅ /models_hf  & /models_hf/update
 3.  ✅ /models_missing
 4.  ✅ configs/overrides.yaml (manual force-include/exclude) folded into /models_missing
