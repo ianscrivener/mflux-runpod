@@ -5,14 +5,12 @@
   import QueueView from "./lib/views/QueueView.svelte";
   import RunsView from "./lib/views/RunsView.svelte";
   import DatasetsView from "./lib/views/DatasetsView.svelte";
-  import ModelStoreView from "./lib/views/ModelStoreView.svelte";
 
   const NAV_TABS = [
     { id: "summary", label: "Summary", component: SummaryView },
     { id: "models", label: "Models", component: ModelsView },
     { id: "queue", label: "Queue", component: QueueView },
     { id: "runs", label: "Runs / Generate", component: RunsView },
-    { id: "store", label: "Volumes", component: ModelStoreView },
   ];
 
   const ADMIN_TABS = [{ id: "datasets", label: "Datasets", component: DatasetsView }];

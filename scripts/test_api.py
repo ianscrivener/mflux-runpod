@@ -1,16 +1,10 @@
-"""Live API smoke test -- hits the real, running Orchestrator (deployed on
-RunPod by default, or a local one via API_BASE_URL) and prints a one-line
-summary per endpoint. Not a pytest suite (tests/ covers that with mocks,
-no live calls) -- this is `just test-api`, a quick "is it actually up and
-returning sane data" check against the real thing.
-
-Individual endpoints (`just health`, `just models_hf`, ...) are plain curl
-commands in the justfile instead -- see scripts/resolve_orchestrator_url.py,
-which this also uses, for why the URL isn't hardcoded here either.
+"""Live API smoke test -- hits the real, running local Orchestrator and
+prints a one-line summary per endpoint. Not a pytest suite (tests/ covers
+that with mocks, no live calls) -- this is `just test-api`, a quick "is it
+actually up and returning sane data" check against the real thing.
 
 Usage:
-  RUNPOD_API_KEY=... python scripts/test_api.py
-  API_BASE_URL=http://127.0.0.1:8791 python scripts/test_api.py   # local dev server
+  API_BASE_URL=http://127.0.0.1:8000 python scripts/test_api.py
 
 Exits non-zero if any endpoint fails, so it's usable as a CI/deploy gate.
 """
@@ -20,29 +14,17 @@ import sys
 
 import httpx
 
-from resolve_orchestrator_url import resolve_base_url
-
 
 def main() -> None:
-    api_key = os.environ.get("RUNPOD_API_KEY")
-    explicit_local = os.environ.get("API_BASE_URL")
-    if not api_key and not explicit_local:
-        raise SystemExit("RUNPOD_API_KEY not set")
-
-    base_url = explicit_local.rstrip("/") if explicit_local else resolve_base_url(api_key)
+    base_url = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
     print(f"Target: {base_url}\n")
-
-    # RunPod authenticates LB endpoints at the edge -- every path 401s
-    # without this, including /health. Harmless no-op against a local
-    # plain-FastAPI dev server, which doesn't check it.
-    headers = {"Authorization": f"Bearer {api_key}"}
 
     ok = True
 
     def check(name: str, method: str, path: str, summarize) -> None:
         nonlocal ok
         try:
-            resp = httpx.request(method, f"{base_url}{path}", headers=headers, timeout=30.0)
+            resp = httpx.request(method, f"{base_url}{path}", timeout=30.0)
             resp.raise_for_status()
             data = resp.json()
             print(f"  [ok]   {name:<16} {summarize(data)}")
@@ -63,10 +45,6 @@ def main() -> None:
         "models_missing", "GET", "/models_missing",
         lambda d: f"{len(d.get('missing', []))} series missing, "
         f"{len(d.get('complete', []))} complete",
-    )
-    check(
-        "model_store", "GET", "/model_store",
-        lambda d: f"{len(d.get('volumes', []))} active ephemeral build volume(s)",
     )
     check(
         "report", "GET", "/report",

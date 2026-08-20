@@ -1,6 +1,6 @@
 # HF bucket locations for the Orchestrator's durable state (2026-08-19 design).
 #
-# All seven datasets live in the same HF bucket (hf://buckets/mflux-community/ci)
+# All eight datasets live in the same HF bucket (hf://buckets/mflux-community/ci)
 # -- write access is restricted to the three MFlux admins, per the user, and
 # revisiting that boundary (e.g. splitting models_queue out to a private bucket)
 # is a deferred security-audit item, not something this file should preempt.
@@ -29,11 +29,6 @@ datasets:
   models_src_details:
     path_in_repo: models_src_details.json
     local_path: data-hf-sync/models_src_details.json
-    writable: true
-
-  runpod_gpu_skus:
-    path_in_repo: runpod_gpu_skus.json
-    local_path: data-hf-sync/runpod_gpu_skus.json
     writable: true
 
   logs_devops:

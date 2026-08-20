@@ -7,7 +7,7 @@
   let busy = $state({});
   let msg = $state({});
 
-  // Only these four datasets are actually computed/scraped by this app and
+  // Only these three datasets are actually computed/scraped by this app and
   // have a real "regenerate" endpoint -- everything else in configs/
   // hf_datasets.yaml is either pull-only (models_mflux, owned by upstream
   // mflux CI), human-authored with no generate step (models_queue,
@@ -16,7 +16,6 @@
     models_hf: api.modelsHfUpdate,
     models_missing: api.modelsMissingUpdate,
     models_src_details: api.modelsSrcDetailsUpdate,
-    runpod_gpu_skus: api.runpodGpuSkusUpdate,
   };
 
   async function load() {

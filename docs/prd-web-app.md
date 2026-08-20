@@ -109,14 +109,9 @@ matches the API's own "intentionally blunt" framing).
 
 ### 5. Datasets (`GET /datasets`, `POST /datasets/{name}/pull`, `POST /datasets/{name}/push`)
 
-Sync status for the 7 HF-bucket datasets (last-known hash, local mtime,
+Sync status for the 8 HF-bucket datasets (last-known hash, local mtime,
 writable/not) with manual pull/push buttons per row. Low-traffic page —
 mainly useful for "did the last sync actually happen" visibility.
-
-### 6. Model Store (`GET /model_store`)
-
-Read-only list of active ephemeral per-series RunPod volumes. Small, mostly
-diagnostic.
 
 ## API dependencies (full list, current as of this session)
 
@@ -126,7 +121,6 @@ GET    /models_hf
 POST   /models_hf/update
 GET    /models_missing
 POST   /models_missing/update
-POST   /runpod_gpu_skus/update
 GET    /models_queue
 POST   /models_queue
 PATCH  /models_queue/{entry_id}
@@ -136,7 +130,6 @@ POST   /models_queue/restore
 GET    /datasets
 POST   /datasets/{name}/pull
 POST   /datasets/{name}/push
-GET    /model_store
 POST   /generate
 POST   /generate/{run_id}/cancel
 GET    /report
@@ -146,7 +139,7 @@ POST   /outbox/poll
 GET    /health
 ```
 
-Everything the six views need already exists except the `family`/`GB`/
+Everything the five views need already exists except the `family`/`GB`/
 `text_encoder` fields (View 1) and queue processing (View 3) noted above.
 
 ## Out of scope for v1

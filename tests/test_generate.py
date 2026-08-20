@@ -10,7 +10,7 @@ from app.generate import (
     generate_one,
     resolve_generate_config,
 )
-from app.report import jobs_for_run, record_dispatched_job, run_detail
+from app.report import run_detail
 
 
 @pytest.fixture(autouse=True)
@@ -103,18 +103,12 @@ def test_generate_one_force_overwrite_includes_all_quants(monkeypatch):
     assert set(result["plan"]["quants_to_build"]) == {"q4", "q6", "q8", "bf16"}
 
 
-def test_generate_one_makes_no_runpod_call(monkeypatch):
-    """generate_one must never touch RunPod directly — volume creation
-    belongs to a real trigger_fn, not the planning path. Fail loudly if
-    that boundary is ever crossed again."""
-    import app.runpod_volumes as runpod_volumes_module
-
-    def poison(*args, **kwargs):
-        raise AssertionError("generate_one must not call RunPod directly")
-
-    monkeypatch.setattr(runpod_volumes_module, "create_volume", poison)
-    monkeypatch.setattr(runpod_volumes_module, "list_volumes", poison)
-
+def test_generate_one_never_calls_dispatch_trigger_directly():
+    """generate_one must never call dispatch_trigger itself — dispatch
+    belongs to a real trigger_fn a caller supplies, not the planning path.
+    dispatch_trigger currently always raises DispatchConfigError (see
+    app/generate.py), so if generate_one's default dry_run_trigger path
+    ever started calling it directly, this would fail loudly."""
     generate_one("Fibo")  # must not raise
 
 
@@ -123,61 +117,10 @@ def test_cancel_run_unknown_run_raises():
         cancel_run(999)
 
 
-def test_cancel_run_requires_runpod_env(monkeypatch):
-    monkeypatch.delenv("RUNNER_ENDPOINT_ID", raising=False)
-    monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+def test_cancel_run_not_implemented_for_known_run():
+    """No dispatch mechanism exists to cancel against right now (RunPod's
+    was removed; see app/generate.py) — a known run still always raises
+    DispatchConfigError until a real worker is wired up."""
     result = generate_one("Fibo")
     with pytest.raises(DispatchConfigError):
         cancel_run(result["run_id"])
-
-
-def test_cancel_run_cancels_every_dispatched_job(monkeypatch):
-    monkeypatch.setenv("RUNNER_ENDPOINT_ID", "test-endpoint")
-    monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
-
-    result = generate_one("Fibo")
-    run_id = result["run_id"]
-    record_dispatched_job(run_id, "q4", "job-1")
-    record_dispatched_job(run_id, "q6", "job-2")
-
-    cancelled_calls = []
-    monkeypatch.setattr(
-        "app.runpod_jobs.cancel_job",
-        lambda endpoint_id, job_id: cancelled_calls.append((endpoint_id, job_id)),
-    )
-
-    outcome = cancel_run(run_id)
-
-    assert set(outcome["cancelled"]) == {"job-1", "job-2"}
-    assert outcome["errors"] == []
-    assert {c[1] for c in cancelled_calls} == {"job-1", "job-2"}
-    assert run_detail(run_id)["status"] == "cancelled"
-    assert jobs_for_run(run_id) == []  # cancelled jobs excluded by default
-
-
-def test_cancel_run_one_bad_cancel_does_not_stop_the_rest(monkeypatch):
-    monkeypatch.setenv("RUNNER_ENDPOINT_ID", "test-endpoint")
-    monkeypatch.setenv("RUNPOD_API_KEY", "test-key")
-
-    result = generate_one("Fibo")
-    run_id = result["run_id"]
-    record_dispatched_job(run_id, "q4", "job-ok")
-    record_dispatched_job(run_id, "q6", "job-fails")
-
-    def flaky_cancel(endpoint_id, job_id):
-        if job_id == "job-fails":
-            raise RuntimeError("already finished")
-        return {"status": "CANCELLED"}
-
-    monkeypatch.setattr("app.runpod_jobs.cancel_job", flaky_cancel)
-
-    outcome = cancel_run(run_id)
-
-    assert outcome["cancelled"] == ["job-ok"]
-    assert outcome["errors"] == [{"job_id": "job-fails", "error": "already finished"}]
-    # Partial failure -- the run must NOT be marked terminally cancelled,
-    # since job-fails might still genuinely be running. It stays in its
-    # prior status so a caller can retry cancel_run() against it.
-    assert run_detail(run_id)["status"] == "running"
-    remaining = {j["quant"]: j["job_id"] for j in jobs_for_run(run_id)}
-    assert remaining == {"q6": "job-fails"}  # still recorded, available to retry

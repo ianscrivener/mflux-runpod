@@ -45,11 +45,11 @@ def slugify(name: str) -> str:
 
 def load_configs(configs_dir: Path = CONFIGS_DIR) -> dict[str, dict]:
     """Return {config_stem: config_dict} for every configs/models/*.yaml file.
-    Nothing to exclude here anymore -- overrides.yaml, hf_datasets.yaml, and
-    runpod.yaml all live as siblings of models/, not inside it, specifically
-    so this glob can never again pick up a non-model config by accident
-    (confirmed live 2026-08-19: hf_datasets.yaml briefly living directly
-    under configs/ broke this exact function)."""
+    Nothing to exclude here anymore -- overrides.yaml and hf_datasets.yaml
+    live as siblings of models/, not inside it, specifically so this glob
+    can never again pick up a non-model config by accident (confirmed live
+    2026-08-19: hf_datasets.yaml briefly living directly under configs/
+    broke this exact function)."""
     return {
         path.stem: yaml.safe_load(path.read_text())
         for path in sorted(configs_dir.glob("*.yaml"))

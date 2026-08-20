@@ -9,11 +9,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Overridable via MODELS_HF_PATH so the deployed Orchestrator can put this on
-# its mounted NetworkVolume (/runpod-volume), same as db.py does with
-# REPORT_DB_PATH. Without that, the manifest is written to container-local
-# disk and silently vanishes every time the worker idles out and scales to
-# zero -- /models_hf would then return an empty list until someone re-ran
-# /models_hf/update, which is exactly the bug this file used to have.
+# durable storage, same as db.py does with REPORT_DB_PATH. Without that, the
+# manifest is written to container-local disk and silently vanishes every
+# time the worker idles out and scales to zero -- /models_hf would then
+# return an empty list until someone re-ran /models_hf/update, which is
+# exactly the bug this file used to have.
 DATA_PATH = Path(
     os.environ.get(
         "MODELS_HF_PATH",
@@ -43,12 +43,16 @@ def _model_entry(api, model_id: str) -> dict:
 
 
 def hf_repo_size_gb(repo_id: str) -> float:
-    """Total size in GB of an arbitrary HF repo's files -- used to size a
+    """Total size in GB of an arbitrary HF repo's files -- was used to size a
     series' ephemeral RunPod volume against its actual upstream source
     weights (e.g. Qwen-Image-Edit's ~63GB vs Fibo's much smaller footprint),
-    rather than guessing a flat size for every series.
+    rather than guessing a flat size for every series. Currently unused
+    (the RunPod volume-sizing caller, app.runpod_volumes.size_for_series, was
+    removed while migrating off RunPod) but kept: whatever worker replaces
+    it will still need to check a series' source size against local disk
+    before downloading (e.g. Fibo-Edit-RMBG is ~90GB).
 
-    Raises if HF reports zero total size -- a silently under-sized volume
+    Raises if HF reports zero total size -- a silently under-sized estimate
     (e.g. from a gated repo returning no file metadata, or files_metadata
     not populating on some siblings) is worse than a loud failure, since it
     would only surface later as a mid-build "no space left on device"."""

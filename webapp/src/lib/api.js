@@ -46,7 +46,6 @@ export const api = {
   modelsAvailable: () => get("/models_available"),
   modelsSkippedRefresh: () => post("/models_skipped/refresh"),
   textEncoderAliases: () => get("/text_encoder_aliases"),
-  runpodGpuSkusUpdate: () => post("/runpod_gpu_skus/update"),
 
   queueList: () => get("/models_queue"),
   queueAdd: (entry) => post("/models_queue", entry),
@@ -58,8 +57,6 @@ export const api = {
   datasetsList: () => get("/datasets"),
   datasetPull: (name) => post(`/datasets/${name}/pull`),
   datasetPush: (name) => post(`/datasets/${name}/push`),
-
-  modelStore: () => get("/model_store"),
 
   generate: (req) => post("/generate", req),
   generateCancel: (runId) => post(`/generate/${runId}/cancel`),

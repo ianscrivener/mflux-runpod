@@ -121,16 +121,18 @@ test-api:
     fi
     exit $exit_code
 
-# Fetch one Orchestrator endpoint as raw JSON. Resolves the current
-# mflux-orchestrator URL fresh each call (via scripts/resolve_orchestrator_url.py
-# -- it changes on every redeploy) and echoes the literal curl command to
-# stderr first, so `just health` etc. show exactly what's being sent.
+# Fetch one Orchestrator endpoint as raw JSON, against the local dev server
+# (see `just serve`). Echoes the literal curl command to stderr first, so
+# `just health` etc. show exactly what's being sent. RunPod's since-removed
+# deployment used to make this resolve a redeploy-fresh remote URL with a
+# Bearer token; there's no deployed endpoint to resolve right now, so this
+# is local-only until a new deployment target exists.
 _fetch path:
     #!/usr/bin/env bash
     set -euo pipefail
-    url=$(.venv/bin/python3 scripts/resolve_orchestrator_url.py)
-    echo "curl -H 'Authorization: Bearer \$RUNPOD_API_KEY' ${url}{{ path }}" >&2
-    curl -s -H "Authorization: Bearer $RUNPOD_API_KEY" "${url}{{ path }}" | .venv/bin/python3 -m json.tool
+    url="http://127.0.0.1:8000"
+    echo "curl ${url}{{ path }}" >&2
+    curl -s "${url}{{ path }}" | .venv/bin/python3 -m json.tool
 
 # GET /health, raw JSON
 health: (_fetch "/health")
@@ -144,16 +146,9 @@ models_hf: (_fetch "/models_hf")
 # GET /models_missing, raw JSON
 models_missing: (_fetch "/models_missing")
 
-# GET /model_store, raw JSON
-model_store: (_fetch "/model_store")
-
 # GET /report, raw JSON
 report: (_fetch "/report")
 
-# Open the current Orchestrator's /docs in your browser (will likely 401, browser can't send the Bearer header)
+# Open the local Orchestrator's /docs in your browser (see `just serve`)
 open:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    url=$(.venv/bin/python3 scripts/resolve_orchestrator_url.py)
-    echo "Opening ${url}/docs (will 401 without a Bearer header -- browser can't send one)" >&2
-    open "${url}/docs"
+    open "http://127.0.0.1:8000/docs"

@@ -2,16 +2,17 @@
 
 Plans and records a generation run for a model series: resolves its config
 (with request-param overrides), records a `runs` row, and hands off to the GPU
-Runner asynchronously via trigger_fn.
+worker asynchronously via trigger_fn.
 
-SAFETY: there is no @Endpoint-deployed Runner yet (see ToDo.md task 14/15), and
-this module must never silently start real, billed RunPod work. generate_one
-itself makes NO RunPod API calls (no volume creation, no GPU dispatch) —
-planning and DB bookkeeping only. trigger_fn defaults to a no-op dry-run stub.
-Volume creation belongs inside a real trigger_fn once a live Runner endpoint
-exists and its invocation contract is decided with the user — NOT in
-generate_one, so that even a bare call with RUNPOD_API_KEY set in the
-environment cannot provision paid storage.
+SAFETY: there is no dispatch mechanism wired up right now -- the RunPod-based
+one (network volume + async job API) was removed while migrating to a
+Hugging Face Spaces Docker worker, and this module must never silently start
+real, billed GPU work in the meantime. generate_one itself makes NO dispatch
+calls (no volume/job creation) — planning and DB bookkeeping only. trigger_fn
+defaults to a no-op dry-run stub. Real dispatch belongs inside a real
+trigger_fn once a live worker exists and its invocation contract is decided
+with the user — NOT in generate_one, so that even a bare call cannot
+accidentally provision paid infrastructure.
 """
 
 from datetime import datetime, timezone
@@ -19,7 +20,7 @@ from typing import Callable
 
 from app.models_hf import load_models_hf
 from app.models_missing import expected_repo_ids, load_configs
-from app.report import create_run, finish_run, record_dispatched_job
+from app.report import create_run, finish_run
 
 DEFAULT_MFLUX_REPO = "https://github.com/mflux-community/mflux.git"
 DEFAULT_MFLUX_BRANCH = "main"
@@ -30,10 +31,11 @@ class UnknownModelError(ValueError):
 
 
 class DispatchConfigError(RuntimeError):
-    """Raised by dispatch_trigger when the environment it needs (RUNNER_ENDPOINT_ID,
-    RUNPOD_API_KEY) isn't configured -- a deployment/config problem, not a bad
-    request, but callers should still turn this into a clean error response
-    instead of letting it surface as an unhandled 500."""
+    """Raised by dispatch_trigger/cancel_run when real GPU dispatch isn't
+    available on this deployment (not configured, or -- currently -- not
+    implemented at all) -- a deployment/config problem, not a bad request,
+    but callers should still turn this into a clean error response instead
+    of letting it surface as an unhandled 500."""
 
     pass
 
@@ -58,150 +60,48 @@ def resolve_generate_config(
 
 def dry_run_trigger(model_series: str, run_id: int, plan: dict) -> dict:
     """Default trigger_fn: plans and records only, fires nothing. Safe to call
-    with no RunPod GPU authorization — does not deploy or invoke a Runner."""
+    with no GPU worker configured — does not deploy or invoke anything."""
     return {"dispatched": False, "reason": "dry_run", "run_id": run_id, "plan": plan}
 
 
 def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
-    """Real trigger_fn: creates/reuses the series' ephemeral network volume,
-    then dispatches one async RunPod job per quant in plan["quants_to_build"]
-    to the Docker Runner (dockerFiles/runner_handler.py), each carrying run_id
-    so it reports back via POST /report/run/{run_id}. Returns immediately once
-    jobs are submitted — does not wait for a build to finish.
+    """Real trigger_fn: hands the plan off to the GPU worker to build every
+    quant in plan["quants_to_build"], each carrying run_id so it reports back
+    via POST /report/run/{run_id}.
 
-    Requires RUNNER_ENDPOINT_ID (the Docker Runner's serverless endpoint id)
-    and RUNPOD_API_KEY in the environment. The Runner endpoint itself must
-    have ORCHESTRATOR_BASE_URL + RUNPOD_API_KEY in ITS OWN env for the
-    callback (see dockerFiles/runner_handler.py) and must be pinned to the
-    same datacenter as the volume create_volume() creates (network volumes
-    are datacenter-locked — see app.runpod_volumes).
+    Not implemented. The previous implementation dispatched an async RunPod
+    job per quant (network volume + Docker Runner on RunPod's serverless
+    platform); that was removed while migrating to a Hugging Face Spaces
+    Docker worker (pull source weights from HF, quantize, push the result
+    back to HF — no ephemeral volume). dry_run_trigger remains safe to use
+    until a real trigger_fn is wired up for the new worker.
     """
-    import os
-
-    import httpx
-
-    from app.runpod_volumes import create_volume
-
-    runner_endpoint_id = os.environ.get("RUNNER_ENDPOINT_ID")
-    api_key = os.environ.get("RUNPOD_API_KEY")
-    if not runner_endpoint_id or not api_key:
-        missing = [
-            name
-            for name, value in (("RUNNER_ENDPOINT_ID", runner_endpoint_id), ("RUNPOD_API_KEY", api_key))
-            if not value
-        ]
-        raise DispatchConfigError(
-            f"dispatch=true requires {', '.join(missing)} in the Orchestrator's "
-            "environment, but it's not set -- real GPU dispatch isn't configured "
-            "on this deployment yet."
-        )
-
-    volume = create_volume(model_series)
-    config = load_configs()[model_series]
-
-    # force_mflux_repo is only set for a non-default repo/branch request —
-    # the Runner's baked-in mflux (mflux-community@main) covers the default
-    # case with zero pip installs at job time (see runner_handler.py's
-    # _apply_overrides). "@branch" matches pip's own git-VCS install syntax.
-    force_mflux_repo = None
-    if plan["mflux_repo"] != DEFAULT_MFLUX_REPO or plan["mflux_branch"] != DEFAULT_MFLUX_BRANCH:
-        force_mflux_repo = f"{plan['mflux_repo']}@{plan['mflux_branch']}"
-
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    dispatched = []
-    with httpx.Client(timeout=30.0) as client:
-        for quant in plan["quants_to_build"]:
-            job_input = {
-                "config_stem": model_series,
-                "config": config,
-                "quant": quant,
-                "volume_root": "/runpod-volume",
-                "force_hf_overwrite": plan["force_hf_overwrite"],
-                "already_published": False,
-                "run_id": run_id,
-            }
-            if force_mflux_repo is not None:
-                job_input["force_mflux_repo"] = force_mflux_repo
-
-            response = client.post(
-                f"https://api.runpod.ai/v2/{runner_endpoint_id}/run",
-                headers=headers,
-                json={"input": job_input},
-            )
-            response.raise_for_status()
-            job_id = response.json()["id"]
-            try:
-                record_dispatched_job(run_id, quant, job_id)
-            except Exception as exc:
-                # The job IS live on RunPod at this point -- losing the local
-                # record would make it an unrecoverable orphan (cancel_run
-                # can only find jobs via dispatched_jobs). Best-effort cancel
-                # it immediately rather than leaving it running unaccounted
-                # for, then surface the original failure loudly rather than
-                # silently continuing to dispatch more jobs.
-                from app.runpod_jobs import cancel_job
-
-                cancel_error = None
-                try:
-                    cancel_job(runner_endpoint_id, job_id)
-                except Exception as cancel_exc:  # noqa: BLE001
-                    cancel_error = str(cancel_exc)
-                raise RuntimeError(
-                    f"dispatched {model_series}/{quant} (job {job_id}) but failed to "
-                    f"record it locally: {exc}. Emergency cancel "
-                    f"{'succeeded' if cancel_error is None else f'also failed: {cancel_error}'}."
-                ) from exc
-            dispatched.append({"quant": quant, "job_id": job_id})
-
-    return {
-        "dispatched": True,
-        "run_id": run_id,
-        "volume_id": volume["id"],
-        "jobs": dispatched,
-    }
+    raise DispatchConfigError(
+        "dispatch=true is not available on this deployment -- real GPU "
+        "dispatch was removed while migrating off RunPod and the "
+        "replacement (HF Spaces Docker worker) dispatch mechanism isn't "
+        "wired up yet. Use dispatch=false (the default) for planning/"
+        "dry-run only."
+    )
 
 
 def cancel_run(run_id: int) -> dict:
-    """Cancel every still-in-flight RunPod job for a run and mark it
-    cancelled. Best-effort per job -- one job's cancel API call failing
-    (e.g. it already finished) doesn't stop the others from being tried."""
-    import os
+    """Cancel every still-in-flight job for a run and mark it cancelled.
 
-    from app.report import jobs_for_run, mark_jobs_cancelled, mark_run_cancelled, run_detail
+    Not implemented, for the same reason as dispatch_trigger: no dispatch
+    mechanism currently exists, so there is nothing live to cancel. Kept as
+    a stub (rather than deleted) so /generate/{run_id}/cancel has the same
+    clean seam to wire up again once a real worker exists."""
+    from app.report import run_detail
 
     if run_detail(run_id) is None:
         raise UnknownModelError(f"run {run_id} not found")
 
-    runner_endpoint_id = os.environ.get("RUNNER_ENDPOINT_ID")
-    api_key = os.environ.get("RUNPOD_API_KEY")
-    if not runner_endpoint_id or not api_key:
-        raise DispatchConfigError(
-            "cancelling a run requires RUNNER_ENDPOINT_ID and RUNPOD_API_KEY in the "
-            "Orchestrator's environment, same as dispatching one."
-        )
-
-    from app.runpod_jobs import cancel_job
-
-    jobs = jobs_for_run(run_id)
-    cancelled, errors = [], []
-    for job in jobs:
-        try:
-            cancel_job(runner_endpoint_id, job["job_id"])
-            cancelled.append(job["job_id"])
-        except Exception as exc:  # noqa: BLE001 - one bad cancel shouldn't stop the rest
-            errors.append({"job_id": job["job_id"], "error": str(exc)})
-
-    if cancelled:
-        mark_jobs_cancelled(run_id, cancelled)
-    # Only mark the run terminally cancelled if every job actually was --
-    # a partial failure could mean a job is still genuinely running (not
-    # just "already finished"), so leave the run in its current status and
-    # let a caller retry cancel_run() against the still-recorded failures
-    # rather than lying that everything stopped.
-    if not errors:
-        mark_run_cancelled(run_id)
-
-    return {"run_id": run_id, "cancelled": cancelled, "errors": errors}
+    raise DispatchConfigError(
+        "cancel is not available on this deployment -- real GPU dispatch "
+        "(and therefore cancellation) was removed while migrating off "
+        "RunPod and the replacement worker isn't wired up yet."
+    )
 
 
 def generate_one(
@@ -213,8 +113,8 @@ def generate_one(
     trigger_fn: Callable[[str, int, dict], dict] = dry_run_trigger,
 ) -> dict:
     """Plan+record a single model's generation run: writes a `runs` row and
-    calls trigger_fn (a no-op dry-run by default) to hand off to the Runner.
-    Makes no RunPod API calls itself — volume creation is trigger_fn's
+    calls trigger_fn (a no-op dry-run by default) to hand off to the GPU
+    worker. Makes no dispatch calls itself — that's trigger_fn's
     responsibility once a real one exists. Returns the trigger_fn result plus
     the run plan."""
     config = resolve_generate_config(model_stem, quants=quants, mflux_branch=mflux_branch)

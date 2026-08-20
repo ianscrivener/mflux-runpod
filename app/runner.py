@@ -1,10 +1,12 @@
 """GPU Runner (PRD: (2) Runner - GPU).
 
-Ports the old create-mflux-models.py logic (Modal A10 script) to run against a
-RunPod-mounted per-model-series volume instead of a Modal Volume. No @Endpoint
-decorator here — this module is plain, testable Python. Wiring it up as an
-actual Flash serverless endpoint (task 14) needs live GPU authorization; see
-app/runner_endpoint.py for that wrapper.
+Ports the old create-mflux-models.py logic (Modal A10 script) to run against
+the worker's local build scratch space instead of a Modal Volume. Previously
+that scratch space was a RunPod Network Volume; the RunPod-specific dispatch
+layer was removed while migrating to a different GPU worker (see
+app/generate.py::dispatch_trigger) -- this module's own logic is unaffected,
+since it never talked to RunPod directly, only to a local path. No @Endpoint
+decorator here — this module is plain, testable Python.
 
 One GPU job builds and uploads exactly ONE quant (decided together with the
 user: better crash-isolation and retry granularity than one job per series,
@@ -12,10 +14,10 @@ and mflux quant builds are minutes-long so per-job cold start is negligible
 relative to build time). build_and_upload_one_quant():
   1. Locates the mflux model class named in the config (model_object) under
      mflux.models, and builds the ModelConfig named in model_config.
-  2. Builds the quant into the series' volume, reusing a valid local build via
-     the sha256 manifest.json check (crash-resume, task 13) — unless it's
-     already on HF and force_hf_overwrite is false, in which case it's skipped
-     entirely.
+  2. Builds the quant into the series' build scratch space, reusing a valid
+     local build via the sha256 manifest.json check (crash-resume, task 13)
+     — unless it's already on HF and force_hf_overwrite is false, in which
+     case it's skipped entirely.
   3. Uploads the built quant to its own repo (mflux-community/{slug}-mflux-{quant}).
   4. Deletes the local build from the volume once uploaded.
   5. Adds the uploaded repo to the series' HF Collection (create-or-reuse) —

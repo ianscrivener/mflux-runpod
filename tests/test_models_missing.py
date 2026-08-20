@@ -83,7 +83,7 @@ def test_compute_missing_all_missing_when_hf_empty(sample_configs):
 
 
 def test_configs_dir_and_overrides_path_are_siblings_not_nested():
-    """overrides.yaml (and hf_datasets.yaml/runpod.yaml) live as siblings of
+    """overrides.yaml (and hf_datasets.yaml) live as siblings of
     configs/models/, not inside it -- that's what stops load_configs()'s glob
     from ever picking up a non-model config by accident (it did, once, when
     hf_datasets.yaml briefly lived directly under configs/ -- see

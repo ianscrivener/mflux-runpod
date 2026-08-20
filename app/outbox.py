@@ -127,11 +127,13 @@ def process_pending() -> dict:
         pending = list_pending()
     except (ClientError, BotoCoreError) as exc:
         # Credentials are "set" (OutboxConfigError doesn't fire) but wrong --
-        # e.g. an unsubstituted RunPod Secret placeholder like literal
-        # "{{ RUNPOD_SECRET_DO_SPACES_KEY }}" (confirmed live, 2026-08-18:
-        # the secret hadn't been created in the RunPod console yet). Convert
-        # to the same clean, catchable error either way rather than letting
-        # a raw boto3 exception surface as a bare 500.
+        # e.g. an unsubstituted secret-template placeholder literal, still
+        # sitting in an env var instead of its real value (confirmed live,
+        # 2026-08-18, on the since-removed RunPod deployment: a `{{ ... }}`
+        # placeholder because the secret hadn't been created in RunPod's
+        # console yet). Convert to the same clean, catchable error either
+        # way rather than letting a raw boto3 exception surface as a bare
+        # 500.
         raise OutboxConfigError(f"DO Spaces outbox request failed: {exc}") from exc
 
     processed = []

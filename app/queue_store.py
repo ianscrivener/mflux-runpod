@@ -32,7 +32,7 @@ def _region_endpoint(raw_endpoint: str) -> str:
     # Identical to app.outbox._region_endpoint -- both talk to the same DO
     # Spaces account, kept as separate small functions rather than a shared
     # import to match this project's existing convention of each storage
-    # module owning its own client setup (see app.outbox, app.runpod_volumes).
+    # module owning its own client setup (see app.outbox, app.hf_datasets).
     host = urlparse(raw_endpoint if "://" in raw_endpoint else f"https://{raw_endpoint}").netloc
     parts = host.split(".")
     if len(parts) >= 3 and parts[-2:] == ["digitaloceanspaces", "com"]:

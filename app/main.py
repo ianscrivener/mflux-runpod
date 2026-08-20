@@ -283,17 +283,6 @@ def models_src_details_update():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/runpod_gpu_skus/update", summary="Refresh RunPod GPU pricing and publish it")
-def runpod_gpu_skus_update():
-    from app.hf_datasets import HfDatasetConfigError
-    from app.runpod_skus import RunpodSkusConfigError, refresh_gpu_skus
-
-    try:
-        return {"gpus": refresh_gpu_skus()}
-    except (RunpodSkusConfigError, HfDatasetConfigError) as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
 @app.post("/models_queue/publish", summary="Save local models_queue.json as the DO Spaces master + refresh the HF mirror")
 def models_queue_publish():
     from app.hf_datasets import HfDatasetConfigError
@@ -381,7 +370,7 @@ def models_queue_delete(entry_id: int):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@app.get("/datasets", summary="List the seven HF-bucket-backed datasets and their sync state")
+@app.get("/datasets", summary="List the eight HF-bucket-backed datasets and their sync state")
 def datasets_list():
     from app.hf_datasets import list_datasets
 
@@ -407,18 +396,6 @@ def datasets_push(name: str):
     except HfDatasetConfigError as exc:
         status = 404 if "no such dataset" in str(exc) else 400 if "not writable" in str(exc) else 503
         raise HTTPException(status_code=status, detail=str(exc)) from exc
-
-
-@app.get("/model_store")
-def model_store():
-    """List currently-active ephemeral per-series build volumes (NOT the
-    model store itself -- finished quants live on Hugging Face, see
-    /models_hf. These are RunPod build-scratch volumes; see
-    app.runpod_volumes.list_active_series_volumes's docstring for why a
-    listed volume is usually empty or holding one in-progress build)."""
-    from app.runpod_volumes import list_active_series_volumes
-
-    return {"volumes": list_active_series_volumes()}
 
 
 class GenerateRequest(BaseModel):
@@ -457,9 +434,9 @@ class GenerateRequest(BaseModel):
     dispatch: bool = Field(
         default=False,
         description="Opt-in to real work. false (default) = dry-run: plans and records "
-        "a `runs` row only, makes no RunPod API calls, dispatches nothing. true = "
-        "creates/reuses the series' RunPod network volume and dispatches one real, "
-        "billed GPU job per quant to the Runner (see app/generate.py::dispatch_trigger).",
+        "a `runs` row only, dispatches nothing. true = dispatches one real, billed "
+        "GPU job per quant to the worker (see app/generate.py::dispatch_trigger -- "
+        "not yet implemented while migrating off RunPod, currently always 503s).",
     )
 
     model_config = {
@@ -479,9 +456,9 @@ class GenerateRequest(BaseModel):
 @app.post("/generate", summary="Plan (and optionally dispatch) one model series' build")
 def generate(request: GenerateRequest):
     """Plan+record one model's generation run. Dry-runs by default (plans
-    and records a `runs` row only, no RunPod API calls) — pass
-    dispatch=true to actually create/reuse the series' volume and dispatch
-    real GPU jobs to the Runner (see app/generate.py::dispatch_trigger)."""
+    and records a `runs` row only) — pass dispatch=true to dispatch real GPU
+    jobs to the worker (see app/generate.py::dispatch_trigger -- not yet
+    implemented while migrating off RunPod, currently always 503s)."""
     from app.generate import DispatchConfigError, dispatch_trigger
 
     trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
@@ -500,7 +477,7 @@ def generate(request: GenerateRequest):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/generate/{run_id}/cancel", summary="Cancel a run's still-in-flight RunPod jobs")
+@app.post("/generate/{run_id}/cancel", summary="Cancel a run's still-in-flight GPU jobs")
 def generate_cancel(run_id: int):
     """Best-effort: cancels every job dispatch_trigger recorded for this
     run_id that hasn't already been cancelled, then marks the run
@@ -544,11 +521,10 @@ class RunStatusCallback(BaseModel):
 
 class RunStatusCallbackEnvelope(BaseModel):
     """Wire format is {"data": {...}} at the top level, not a bare
-    RunStatusCallback -- this matches app/orchestrator_endpoint.py's Flash
-    load-balanced route (which requires args wrapped under a key matching
-    its param name, confirmed live), so dockerFiles/runner_handler.py and
-    app/runner_endpoint.py can POST the identical payload shape to either
-    Orchestrator entrypoint without knowing which one they're talking to."""
+    RunStatusCallback -- kept from the RunPod-era dual-deployment shape
+    (a second Flash-hosted Orchestrator entrypoint, since removed, required
+    args wrapped under a key matching its param name) so any worker's
+    callback payload doesn't need to change if that shape comes back."""
 
     data: RunStatusCallback
 
@@ -600,8 +576,8 @@ def report_dump():
 @app.delete("/report", summary="Clear the generation log (runs + quant_builds)")
 def report_clear():
     """Deletes every runs + quant_builds row -- schema untouched, and does
-    NOT delete series_volumes (those track real RunPod resources, not log
-    entries). Irreversible; there's no confirmation step, so treat this as
+    NOT delete series_volumes (a legacy RunPod-era table, not log entries).
+    Irreversible; there's no confirmation step, so treat this as
     intentionally blunt maintenance tooling, not something to wire up to a
     casual UI button."""
     return clear_runs()

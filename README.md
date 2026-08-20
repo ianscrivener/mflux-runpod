@@ -1,8 +1,12 @@
 # mflux-runpod
 
-RunPod Flash services that convert and quantize AI models for [MFlux](https://github.com/mflux-community/mflux),
+Services that convert and quantize AI models for [MFlux](https://github.com/mflux-community/mflux),
 and keep the [mflux-community](https://huggingface.co/mflux-community) Hugging Face organization in sync.
 Replaces an earlier Modal-based implementation that became too expensive to run.
+
+**`hf-gpu-worker` branch**: migrating the GPU worker off RunPod (removed) to a
+Hugging Face Spaces Docker worker -- see [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+for exactly what's currently unimplemented as a result.
 
 See [PRD.md](PRD.md) for the full design (endpoints, storage lifecycle, reporting schema) and
 [z_ToDo.txt](z_ToDo.txt) for build progress.
@@ -41,7 +45,6 @@ data-hf-sync/models_hf.json    Generated manifest of what's currently published 
 tests/                 pytest suite
 
 PRD.md                 Full product/design spec
-configs/runpod.yaml     Sample RunPod Flash machine config (CPU orchestrator, GPU runner)
 z_ToDo.txt              Task list / build order
 ```
 
