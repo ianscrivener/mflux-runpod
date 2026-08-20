@@ -1,0 +1,11 @@
+INFO:     Started server process [88683]
+INFO:     Waiting for application startup.
+DO Spaces outbox not configured; background polling disabled
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8124 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59321 - "POST /generate/3/cancel HTTP/1.1" 503 Service Unavailable
+hf sync: pull('models_skipped') skipped: 'models_skipped.json' not found in bucket 'mflux-community/ci' -- nothing to pull
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [88683]

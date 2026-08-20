@@ -6,6 +6,7 @@ from app.generate import (
     DispatchConfigError,
     UnknownModelError,
     cancel_run,
+    dispatch_trigger,
     dry_run_trigger,
     generate_one,
     resolve_generate_config,
@@ -103,13 +104,71 @@ def test_generate_one_force_overwrite_includes_all_quants(monkeypatch):
     assert set(result["plan"]["quants_to_build"]) == {"q4", "q6", "q8", "bf16"}
 
 
-def test_generate_one_never_calls_dispatch_trigger_directly():
+def test_generate_one_never_calls_dispatch_trigger_directly(monkeypatch):
     """generate_one must never call dispatch_trigger itself — dispatch
     belongs to a real trigger_fn a caller supplies, not the planning path.
-    dispatch_trigger currently always raises DispatchConfigError (see
-    app/generate.py), so if generate_one's default dry_run_trigger path
-    ever started calling it directly, this would fail loudly."""
+    Poison dispatch_trigger so this fails loudly if that boundary is ever
+    crossed (generate_one's default trigger_fn is dry_run_trigger, which
+    should be the only thing that runs here)."""
+
+    def poison(*args, **kwargs):
+        raise AssertionError("generate_one must not call dispatch_trigger directly")
+
+    monkeypatch.setattr("app.generate.dispatch_trigger", poison)
     generate_one("Fibo")  # must not raise
+
+
+def test_dispatch_trigger_requires_worker_url(monkeypatch):
+    monkeypatch.delenv("HF_WORKER_URL", raising=False)
+    with pytest.raises(DispatchConfigError, match="HF_WORKER_URL"):
+        dispatch_trigger("Fibo", run_id=1, plan={"quants_to_build": ["q4"], "force_hf_overwrite": False})
+
+
+def test_dispatch_trigger_posts_one_build_per_quant(monkeypatch):
+    monkeypatch.setenv("HF_WORKER_URL", "https://example-worker.hf.space")
+    monkeypatch.setenv("HF_TOKEN", "hf-token-value")
+    monkeypatch.setenv("WORKER_API_KEY", "secret-key")
+
+    posted = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"queued": True, "queue_depth": 1}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            posted.append((url, headers, json))
+            return FakeResponse()
+
+    monkeypatch.setattr("httpx.Client", FakeClient)
+
+    plan = {"quants_to_build": ["q4", "q8"], "force_hf_overwrite": False}
+    result = dispatch_trigger("Fibo", run_id=42, plan=plan)
+
+    assert result["dispatched"] is True
+    assert result["run_id"] == 42
+    assert [j["quant"] for j in result["jobs"]] == ["q4", "q8"]
+    assert len(posted) == 2
+    url, headers, body = posted[0]
+    assert url == "https://example-worker.hf.space/build"
+    assert headers == {"Authorization": "Bearer hf-token-value", "X-Worker-Api-Key": "secret-key"}
+    assert body["config_stem"] == "Fibo"
+    assert body["quant"] == "q4"
+    assert body["run_id"] == 42
+    assert body["already_published"] is False
+    assert body["config"]["model_object"] == "FIBO"  # the real loaded config, not a stub
 
 
 def test_cancel_run_unknown_run_raises():
@@ -118,9 +177,8 @@ def test_cancel_run_unknown_run_raises():
 
 
 def test_cancel_run_not_implemented_for_known_run():
-    """No dispatch mechanism exists to cancel against right now (RunPod's
-    was removed; see app/generate.py) — a known run still always raises
-    DispatchConfigError until a real worker is wired up."""
+    """The HF Spaces worker has no cancel endpoint yet (see app/generate.py)
+    — a known run still always raises DispatchConfigError."""
     result = generate_one("Fibo")
     with pytest.raises(DispatchConfigError):
         cancel_run(result["run_id"])

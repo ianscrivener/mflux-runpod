@@ -113,18 +113,18 @@
     syncMsg = "publishing…";
     try {
       const res = await api.queuePublish();
-      syncMsg = res.published === false ? `publish failed: ${res.publish_error}` : "published to DO Spaces master";
+      syncMsg = res.published === false ? `publish failed: ${res.publish_error}` : "published to HF-bucket master";
     } catch (e) {
       syncMsg = e.message;
     }
   }
 
   async function doRestore() {
-    if (!confirm("Overwrite the local queue with the DO Spaces master copy?")) return;
+    if (!confirm("Overwrite the local queue with the HF-bucket master copy?")) return;
     syncMsg = "restoring…";
     try {
       await api.queueRestore();
-      syncMsg = "restored from DO Spaces master";
+      syncMsg = "restored from HF-bucket master";
       await load();
     } catch (e) {
       syncMsg = e.message;

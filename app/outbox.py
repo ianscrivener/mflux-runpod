@@ -1,115 +1,103 @@
-"""Durable Runner -> Orchestrator result delivery via DigitalOcean Spaces
-(S3-compatible), replacing the direct HTTP callback dockerFiles/runner_handler.py
-used to POST straight to ORCHESTRATOR_BASE_URL.
+"""Durable Runner -> Orchestrator result delivery via a Hugging Face bucket,
+replacing the direct HTTP callback dockerFiles/runner_handler.py used to POST
+straight to ORCHESTRATOR_BASE_URL.
 
 That required the Orchestrator to be reachable at the exact moment a job
 finished -- fine for an always-on cloud host, but not for one that might be
 offline for hours (e.g. a personal machine, per 2026-08-18's design
-discussion). Design: the Runner PUTs a small JSON result object per quant
-job to a well-known key; the Orchestrator polls (list + process + delete) on
+discussion). Design: a worker adds a small JSON result object per quant job
+to a well-known key; the Orchestrator polls (list + process + delete) on
 its own schedule, whenever it happens to be running. A result sitting
 unprocessed in the bucket for hours or days is completely fine -- that's the
 entire point.
+
+Bucket: originally DigitalOcean Spaces (S3-compatible, boto3); replaced
+2026-08-20 with the HF Spaces GPU worker's own companion bucket
+(`cleverheart2026/mflux-model-gpu-runner-storage`) via huggingface_hub's
+bucket API. Confirmed live that this bucket is the worker Space's own
+Persistent Storage backing -- the same bucket mounted at /data inside the
+worker container for build scratch (see docker-runner-hf/worker.py's
+BUILD_ROOT), so `results/` here is a sibling prefix to `build/`, not a
+separate resource. Only credential needed either side is HF_TOKEN, which
+every other piece of this project already requires (model uploads, the
+private Space's own access gate) -- no second cloud account/credential set
+to configure, unlike the DO Spaces version this replaces.
 
 Object key layout: results/{run_id}/{quant}.json
 """
 
 import json
 import os
-from urllib.parse import urlparse
+import tempfile
+from pathlib import Path
 
 RESULTS_PREFIX = "results/"
-
-_REQUIRED_ENV = ("DO_SPACES_KEY", "DO_SPACES_SECRET", "DO_SPACES_ENDPOINT", "DO_SPACES_BUCKET")
+DEFAULT_BUCKET_ID = "cleverheart2026/mflux-model-gpu-runner-storage"
 
 
 class OutboxConfigError(RuntimeError):
-    """Raised when DO_SPACES_* isn't configured in the environment -- a
+    """Raised when HF_TOKEN isn't configured in the environment -- a
     deployment/config problem, not a bad request. Callers (HTTP routes)
     should catch this and return a clean error response instead of a bare
     500/crash, same pattern as app.generate.DispatchConfigError."""
 
 
-def _region_endpoint(raw_endpoint: str) -> str:
-    """Normalize a possibly bucket-prefixed virtual-hosted endpoint
-    (https://<bucket>.<region>.digitaloceanspaces.com) down to the generic
-    regional one (https://<region>.digitaloceanspaces.com) -- boto3
-    addresses the bucket via the bucket_name parameter on each call, not
-    baked into the endpoint URL, so either form works but the generic one
-    avoids any path/vhost-style addressing ambiguity."""
-    host = urlparse(raw_endpoint if "://" in raw_endpoint else f"https://{raw_endpoint}").netloc
-    parts = host.split(".")
-    if len(parts) >= 3 and parts[-2:] == ["digitaloceanspaces", "com"]:
-        return f"https://{parts[-3]}.digitaloceanspaces.com"
-    return raw_endpoint
+def _bucket_id() -> str:
+    """Overridable via OUTBOX_BUCKET_ID for anyone pointing this at a
+    different bucket; defaults to the worker Space's own companion bucket,
+    the actual bucket in use as of 2026-08-20."""
+    return os.environ.get("OUTBOX_BUCKET_ID") or DEFAULT_BUCKET_ID
 
 
-def _config() -> dict:
-    missing = [name for name in _REQUIRED_ENV if not os.environ.get(name)]
-    if missing:
+def _token() -> str:
+    token = os.environ.get("HF_TOKEN")
+    if not token:
         raise OutboxConfigError(
-            f"DO Spaces outbox requires {', '.join(missing)} in the environment, "
-            "but not set -- durable result delivery isn't configured."
+            "HF bucket outbox requires HF_TOKEN in the environment, but it's "
+            "not set -- durable result delivery isn't configured."
         )
-    endpoint = _region_endpoint(os.environ["DO_SPACES_ENDPOINT"])
-    region = os.environ.get("DO_SPACES_REGION") or endpoint.split("//", 1)[1].split(".", 1)[0]
-    return {
-        "endpoint_url": endpoint,
-        "region_name": region,
-        "aws_access_key_id": os.environ["DO_SPACES_KEY"],
-        "aws_secret_access_key": os.environ["DO_SPACES_SECRET"],
-        "bucket": os.environ["DO_SPACES_BUCKET"],
-    }
-
-
-def _client():
-    import boto3
-
-    cfg = _config()
-    client = boto3.client(
-        "s3",
-        endpoint_url=cfg["endpoint_url"],
-        region_name=cfg["region_name"],
-        aws_access_key_id=cfg["aws_access_key_id"],
-        aws_secret_access_key=cfg["aws_secret_access_key"],
-    )
-    return client, cfg["bucket"]
+    return token
 
 
 def put_result(run_id: int, quant: str, payload: dict) -> str:
     """Durably deposit one quant job's result. Returns the object key."""
-    client, bucket = _client()
+    import huggingface_hub as hf
+
     key = f"{RESULTS_PREFIX}{run_id}/{quant}.json"
-    client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(payload).encode("utf-8"),
-        ContentType="application/json",
+    hf.batch_bucket_files(
+        _bucket_id(),
+        add=[(json.dumps(payload).encode("utf-8"), key)],
+        token=_token(),
     )
     return key
 
 
 def list_pending() -> list[str]:
-    """List every pending result object key. S3 listing order isn't
+    """List every pending result object key. Bucket listing order isn't
     upload-time-ordered, but processing order doesn't matter here."""
-    client, bucket = _client()
-    keys = []
-    paginator = client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=RESULTS_PREFIX):
-        for obj in page.get("Contents", []):
-            keys.append(obj["Key"])
-    return keys
+    import huggingface_hub as hf
+
+    return [
+        f.path
+        for f in hf.list_bucket_tree(
+            _bucket_id(), prefix=RESULTS_PREFIX, recursive=True, token=_token()
+        )
+    ]
 
 
 def get_result(key: str) -> dict:
-    client, bucket = _client()
-    obj = client.get_object(Bucket=bucket, Key=key)
-    return json.loads(obj["Body"].read())
+    import huggingface_hub as hf
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        local_path = Path(tmp_dir) / "result.json"
+        hf.download_bucket_files(_bucket_id(), [(key, local_path)], token=_token())
+        return json.loads(local_path.read_text())
 
 
 def delete_result(key: str) -> None:
-    client, bucket = _client()
-    client.delete_object(Bucket=bucket, Key=key)
+    import huggingface_hub as hf
+
+    hf.batch_bucket_files(_bucket_id(), delete=[key], token=_token())
 
 
 def process_pending() -> dict:
@@ -119,22 +107,18 @@ def process_pending() -> dict:
     so it can be inspected rather than silently lost -- reported in
     `errors` instead. run_id is parsed from the key itself so even a
     malformed payload still identifies which run to flag."""
-    from botocore.exceptions import BotoCoreError, ClientError
+    from huggingface_hub.errors import HfHubHTTPError
 
     from app.report import add_quant_build, update_run_status_from_children
 
     try:
         pending = list_pending()
-    except (ClientError, BotoCoreError) as exc:
-        # Credentials are "set" (OutboxConfigError doesn't fire) but wrong --
-        # e.g. an unsubstituted secret-template placeholder literal, still
-        # sitting in an env var instead of its real value (confirmed live,
-        # 2026-08-18, on the since-removed RunPod deployment: a `{{ ... }}`
-        # placeholder because the secret hadn't been created in RunPod's
-        # console yet). Convert to the same clean, catchable error either
-        # way rather than letting a raw boto3 exception surface as a bare
-        # 500.
-        raise OutboxConfigError(f"DO Spaces outbox request failed: {exc}") from exc
+    except HfHubHTTPError as exc:
+        # Credentials are "set" (OutboxConfigError doesn't fire) but wrong,
+        # or the bucket doesn't exist/isn't reachable with this token --
+        # convert to the same clean, catchable error either way rather than
+        # letting a raw huggingface_hub exception surface as a bare 500.
+        raise OutboxConfigError(f"HF bucket outbox request failed: {exc}") from exc
 
     processed = []
     errors = []

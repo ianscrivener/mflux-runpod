@@ -1,12 +1,16 @@
 # mflux-runpod
 
-Services that convert and quantize AI models for [MFlux](https://github.com/mflux-community/mflux),
+Services that convert and quantize AI models for [MFlux](https://pypi.org/project/mflux/)
+(its GitHub repo, mflux-community/mflux, was suspended by GitHub 2026-08-20 -- PyPI is
+now the only supported install source),
 and keep the [mflux-community](https://huggingface.co/mflux-community) Hugging Face organization in sync.
 Replaces an earlier Modal-based implementation that became too expensive to run.
 
-**`hf-gpu-worker` branch**: migrating the GPU worker off RunPod (removed) to a
-Hugging Face Spaces Docker worker -- see [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-for exactly what's currently unimplemented as a result.
+**`hf-gpu-worker` branch**: migrated the GPU worker off RunPod (removed) to a
+Hugging Face Spaces Docker worker (`docker-runner-hf/`, a separate
+repo/deployment) -- see [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
+picture, including what's still not implemented as a result (`/generate/{run_id}/cancel`,
+mainly).
 
 See [PRD.md](PRD.md) for the full design (endpoints, storage lifecycle, reporting schema) and
 [z_ToDo.txt](z_ToDo.txt) for build progress.

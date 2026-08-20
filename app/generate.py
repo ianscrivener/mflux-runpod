@@ -4,15 +4,19 @@ Plans and records a generation run for a model series: resolves its config
 (with request-param overrides), records a `runs` row, and hands off to the GPU
 worker asynchronously via trigger_fn.
 
-SAFETY: there is no dispatch mechanism wired up right now -- the RunPod-based
-one (network volume + async job API) was removed while migrating to a
-Hugging Face Spaces Docker worker, and this module must never silently start
-real, billed GPU work in the meantime. generate_one itself makes NO dispatch
-calls (no volume/job creation) — planning and DB bookkeeping only. trigger_fn
-defaults to a no-op dry-run stub. Real dispatch belongs inside a real
-trigger_fn once a live worker exists and its invocation contract is decided
-with the user — NOT in generate_one, so that even a bare call cannot
-accidentally provision paid infrastructure.
+SAFETY: generate_one itself makes NO dispatch calls (no build/job creation)
+— planning and DB bookkeeping only. trigger_fn defaults to a no-op dry-run
+stub; real dispatch (dispatch_trigger, below) only runs when a caller
+explicitly opts in with dispatch=true, so even a bare call with
+HF_WORKER_URL set in the environment cannot accidentally start real, billed
+GPU work.
+
+Dispatch target: an HF Spaces Docker GPU worker (docker-runner-hf/, a
+separate repo/deployment -- see its README.md and worker.py), replacing the
+RunPod-based dispatch (per-series Network Volume + async job API on a
+RunPod Serverless Docker Runner) removed while migrating off RunPod. No
+ephemeral volume in the new design: the worker pulls source weights
+straight from HF and pushes the finished quant straight back to HF.
 """
 
 from datetime import datetime, timezone
@@ -22,8 +26,15 @@ from app.models_hf import load_models_hf
 from app.models_missing import expected_repo_ids, load_configs
 from app.report import create_run, finish_run
 
-DEFAULT_MFLUX_REPO = "https://github.com/mflux-community/mflux.git"
+DEFAULT_MFLUX_REPO = "mflux (PyPI)"
 DEFAULT_MFLUX_BRANCH = "main"
+# mflux_repo/mflux_branch are recorded on the `runs` row for audit purposes
+# only -- dispatch_trigger's HF Spaces worker installs a fixed mflux from
+# PyPI at image-build time (see docker-runner-hf/Dockerfile) and has no
+# per-job override mechanism, unlike the old RunPod Runner's
+# force_mflux_repo (git+https://.../mflux.git@branch pip install at job
+# time). mflux-community/mflux was suspended by GitHub 2026-08-20; PyPI is
+# now the only supported install source project-wide (see pyproject.toml).
 
 
 class UnknownModelError(ValueError):
@@ -65,42 +76,88 @@ def dry_run_trigger(model_series: str, run_id: int, plan: dict) -> dict:
 
 
 def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
-    """Real trigger_fn: hands the plan off to the GPU worker to build every
-    quant in plan["quants_to_build"], each carrying run_id so it reports back
-    via POST /report/run/{run_id}.
+    """Real trigger_fn: POSTs one /build request per quant in
+    plan["quants_to_build"] to the HF Spaces Docker GPU worker
+    (docker-runner-hf/worker.py), each carrying run_id so the worker reports
+    back through the durable HF bucket outbox (app.outbox.put_result),
+    which this Orchestrator's own /outbox/poll then applies -- same delivery
+    contract the old RunPod-based Runner used. Returns immediately once
+    every quant is queued on the worker's side -- does not wait for a build
+    to finish.
 
-    Not implemented. The previous implementation dispatched an async RunPod
-    job per quant (network volume + Docker Runner on RunPod's serverless
-    platform); that was removed while migrating to a Hugging Face Spaces
-    Docker worker (pull source weights from HF, quantize, push the result
-    back to HF — no ephemeral volume). dry_run_trigger remains safe to use
-    until a real trigger_fn is wired up for the new worker.
+    Requires HF_WORKER_URL (the deployed Space's base URL, e.g.
+    https://<user>-<space-name>.hf.space) in the Orchestrator's environment.
+
+    Also requires HF_TOKEN if the Space is private (the normal case) --
+    confirmed live 2026-08-20: a private Space's *.hf.space URL is gated by
+    HF's own platform-level auth on the Authorization header, checked before
+    the request ever reaches the container. Sending WORKER_API_KEY there
+    instead (the original design) never got past that gate at all -- it came
+    back as a masking 404, indistinguishable from "no such Space", not an
+    auth error. HF_TOKEN goes on Authorization for that reason; WORKER_API_KEY
+    (still optional, app-level, checked by worker.py itself) goes on a
+    separate X-Worker-Api-Key header instead, since only one scheme can own
+    Authorization on a private Space.
     """
-    raise DispatchConfigError(
-        "dispatch=true is not available on this deployment -- real GPU "
-        "dispatch was removed while migrating off RunPod and the "
-        "replacement (HF Spaces Docker worker) dispatch mechanism isn't "
-        "wired up yet. Use dispatch=false (the default) for planning/"
-        "dry-run only."
-    )
+    import os
+
+    import httpx
+
+    worker_url = os.environ.get("HF_WORKER_URL")
+    if not worker_url:
+        raise DispatchConfigError(
+            "dispatch=true requires HF_WORKER_URL (the deployed HF Spaces "
+            "GPU worker's base URL) in the Orchestrator's environment, but "
+            "it's not set -- real GPU dispatch isn't configured on this "
+            "deployment yet."
+        )
+
+    config = load_configs()[model_series]
+    hf_token = os.environ.get("HF_TOKEN")
+    headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+    worker_key = os.environ.get("WORKER_API_KEY")
+    if worker_key:
+        headers["X-Worker-Api-Key"] = worker_key
+
+    queued = []
+    with httpx.Client(timeout=30.0) as client:
+        for quant in plan["quants_to_build"]:
+            job = {
+                "config_stem": model_series,
+                "config": config,
+                "quant": quant,
+                "run_id": run_id,
+                "force_hf_overwrite": plan["force_hf_overwrite"],
+                # quants_to_build is already filtered to not-yet-published
+                # quants (generate_one, below) -- anything dispatched here
+                # is by construction not already published.
+                "already_published": False,
+            }
+            response = client.post(f"{worker_url.rstrip('/')}/build", headers=headers, json=job)
+            response.raise_for_status()
+            queued.append({"quant": quant, **response.json()})
+
+    return {"dispatched": True, "run_id": run_id, "jobs": queued}
 
 
 def cancel_run(run_id: int) -> dict:
     """Cancel every still-in-flight job for a run and mark it cancelled.
 
-    Not implemented, for the same reason as dispatch_trigger: no dispatch
-    mechanism currently exists, so there is nothing live to cancel. Kept as
-    a stub (rather than deleted) so /generate/{run_id}/cancel has the same
-    clean seam to wire up again once a real worker exists."""
+    Not implemented. dispatch_trigger can now dispatch real work, but the HF
+    Spaces worker (docker-runner-hf/worker.py) has no cancel endpoint --
+    it's a plain FIFO queue with no per-job ids exposed, and aborting a
+    quant mid-build isn't something to bolt on without deciding what state
+    that leaves the worker's local build directory in. Kept as a stub
+    (rather than deleted) so /generate/{run_id}/cancel has a clean seam to
+    wire up once that's actually designed."""
     from app.report import run_detail
 
     if run_detail(run_id) is None:
         raise UnknownModelError(f"run {run_id} not found")
 
     raise DispatchConfigError(
-        "cancel is not available on this deployment -- real GPU dispatch "
-        "(and therefore cancellation) was removed while migrating off "
-        "RunPod and the replacement worker isn't wired up yet."
+        "cancel is not available on this deployment -- the HF Spaces GPU "
+        "worker has no cancel endpoint yet."
     )
 
 

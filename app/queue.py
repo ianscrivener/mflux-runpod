@@ -1,7 +1,7 @@
 """CRUD for the build queue (models_queue.json).
 
 Deliberately separate from app.queue_store, which only handles moving the
-whole file to/from its DO Spaces master -- this module is where entries
+whole file to/from its HF-bucket master -- this module is where entries
 actually get added/edited/removed. Every mutation writes the local file then
 calls queue_store.publish() immediately (low write volume, human-curated,
 so "always current on the real master" is worth more here than batching

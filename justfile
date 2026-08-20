@@ -152,3 +152,39 @@ report: (_fetch "/report")
 # Open the local Orchestrator's /docs in your browser (see `just serve`)
 open:
     open "http://127.0.0.1:8000/docs"
+
+# Sync the GPU worker's code to its standalone HF Space checkout
+# (docker-runner-hf/, a separate git repo -- HF Spaces builds a Docker image
+# straight from the Space's own repo content, so it needs its own copy of
+# whatever app/*.py it imports; no build-context reach-outside-the-repo
+# option exists the way GHCR Actions builds had). Explicit file allowlist
+# (same convention _deprecated/orchestrator-local's now-removed
+# update-orchestrator recipe used) -- only what worker.py actually imports
+# (app.runner -> app.models_missing), nothing Orchestrator- or webapp-only
+# ever leaks in. Never touches docker-runner-hf/.git or its own
+# README.md/Dockerfile/worker.py -- those are authored there directly.
+update-docker-runner:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dest=docker-runner-hf
+    mkdir -p "$dest/app"
+    cp app/__init__.py app/runner.py app/models_missing.py app/outbox.py "$dest/app/"
+    echo "Synced worker code to $dest/app/ -- review with 'git -C $dest status', commit+push there when ready"
+
+# Sync (update-docker-runner) then commit + push docker-runner-hf/ to the HF
+# Space, triggering a rebuild there. msg is the commit message -- pass one
+# that says what actually changed, e.g. `just hf-push msg="bump mlx pin"`.
+# No-ops cleanly (exit 0, nothing pushed) if there's nothing to commit after
+# the sync, so it's always safe to run.
+hf-push msg="Update GPU worker": update-docker-runner
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd docker-runner-hf
+    git add -A
+    if git diff --cached --quiet; then
+        echo "Nothing to push -- docker-runner-hf/ has no changes after sync."
+        exit 0
+    fi
+    git commit -m "{{ msg }}"
+    git push
+    echo "Pushed to the HF Space -- rebuild should start automatically."

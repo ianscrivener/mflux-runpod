@@ -7,9 +7,20 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+# Confirmed live 2026-08-20: a project .env (HF_WORKER_URL, historically
+# DO_SPACES_*) has existed for a while but was never actually loaded into
+# os.environ by anything -- every var in it only ever reached the app if the
+# launching shell happened to export it itself. Load it explicitly, before
+# any of the app.* imports below run (several read os.environ at import
+# time or in module-level constants). Doesn't override already-exported
+# real env vars (override=False, the default), so a real deployment's own
+# secrets still win over a stray local .env.
+load_dotenv()
 
 from app.db import init_db
 from app.generate import UnknownModelError, dry_run_trigger, generate_one
@@ -35,7 +46,7 @@ MODELS_SRC_DETAILS_REFRESH_INTERVAL_S = 6 * 60 * 60  # 6 hours -- see loop docst
 
 
 async def _outbox_poll_loop() -> None:
-    """Background task: process the DO Spaces outbox every
+    """Background task: process the HF bucket outbox every
     OUTBOX_POLL_INTERVAL_S seconds so a job's result gets applied whenever
     this process happens to be running, without needing a direct callback
     at the exact moment the job finishes (see app/outbox.py)."""
@@ -47,9 +58,9 @@ async def _outbox_poll_loop() -> None:
             if result["processed"] or result["errors"]:
                 logger.info("outbox poll: %s", result)
         except OutboxConfigError:
-            # Not configured (e.g. local dev without DO_SPACES_* set) --
+            # Not configured (e.g. local dev without HF_TOKEN set) --
             # don't retry every 30s forever, just stop polling.
-            logger.warning("DO Spaces outbox not configured; background polling disabled")
+            logger.warning("HF bucket outbox not configured; background polling disabled")
             return
         except Exception:  # noqa: BLE001 - one bad poll shouldn't kill the loop
             logger.exception("outbox poll failed")
@@ -283,7 +294,7 @@ def models_src_details_update():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/models_queue/publish", summary="Save local models_queue.json as the DO Spaces master + refresh the HF mirror")
+@app.post("/models_queue/publish", summary="Save local models_queue.json as the HF-bucket master + refresh the HF mirror")
 def models_queue_publish():
     from app.hf_datasets import HfDatasetConfigError
     from app.queue_store import QueueStoreConfigError, publish
@@ -294,7 +305,7 @@ def models_queue_publish():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/models_queue/restore", summary="Overwrite local models_queue.json from the DO Spaces master")
+@app.post("/models_queue/restore", summary="Overwrite local models_queue.json from the HF-bucket master")
 def models_queue_restore():
     from app.queue_store import QueueStoreConfigError, restore
 
@@ -415,15 +426,16 @@ class GenerateRequest(BaseModel):
     )
     mflux_repo: str | None = Field(
         default=None,
-        description="Override the mflux source repo to build against (a fork/PR under "
-        "test). Omit to use the default (mflux-community/mflux). Only takes effect "
-        "when dispatch=true.",
-        examples=["https://github.com/mflux-community/mflux.git"],
+        description="Recorded on the `runs` row for audit purposes only -- the HF "
+        "Spaces GPU worker installs a fixed mflux from PyPI at image-build time and "
+        "has no per-run override mechanism (unlike the old RunPod Runner). Omit to "
+        "use the default.",
+        examples=["mflux (PyPI)"],
     )
     mflux_branch: str | None = Field(
         default=None,
-        description="Branch of mflux_repo to build against. Omit for \"main\". Only "
-        "takes effect when dispatch=true.",
+        description="Same audit-only caveat as mflux_repo -- no per-run effect on "
+        "what the worker actually builds. Omit for \"main\".",
         examples=["main"],
     )
     force_hf_overwrite: bool = Field(
@@ -435,8 +447,9 @@ class GenerateRequest(BaseModel):
         default=False,
         description="Opt-in to real work. false (default) = dry-run: plans and records "
         "a `runs` row only, dispatches nothing. true = dispatches one real, billed "
-        "GPU job per quant to the worker (see app/generate.py::dispatch_trigger -- "
-        "not yet implemented while migrating off RunPod, currently always 503s).",
+        "GPU job per quant to the HF Spaces worker (see app/generate.py::dispatch_trigger) "
+        "-- requires HF_WORKER_URL configured in the Orchestrator's environment, "
+        "503s with a clear message otherwise.",
     )
 
     model_config = {
@@ -457,8 +470,7 @@ class GenerateRequest(BaseModel):
 def generate(request: GenerateRequest):
     """Plan+record one model's generation run. Dry-runs by default (plans
     and records a `runs` row only) — pass dispatch=true to dispatch real GPU
-    jobs to the worker (see app/generate.py::dispatch_trigger -- not yet
-    implemented while migrating off RunPod, currently always 503s)."""
+    jobs to the HF Spaces worker (see app/generate.py::dispatch_trigger)."""
     from app.generate import DispatchConfigError, dispatch_trigger
 
     trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
@@ -583,9 +595,9 @@ def report_clear():
     return clear_runs()
 
 
-@app.post("/outbox/poll", summary="Process the DO Spaces outbox right now")
+@app.post("/outbox/poll", summary="Process the HF bucket outbox right now")
 def outbox_poll():
-    """Process every pending result currently sitting in the DO Spaces
+    """Process every pending result currently sitting in the HF bucket
     outbox immediately, instead of waiting for the background loop's next
     tick (every OUTBOX_POLL_INTERVAL_S seconds -- see app/outbox.py).
     Useful for testing, or forcing an immediate catch-up after being
