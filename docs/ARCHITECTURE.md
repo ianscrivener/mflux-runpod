@@ -139,18 +139,27 @@ leaks into the worker image.
   instead of rebuilding from scratch after a crash), uploads to
   `mflux-community/{slug}-mflux-{quant}`, deletes the local build directory,
   adds the repo to the series' HF Collection.
-- **`BUILD_ROOT` is NOT plain ephemeral container disk, despite the original
-  design intent.** Confirmed live 2026-08-20: this Space has Persistent
-  Storage attached, and `/data` is its mount point -- bucket-backed
+- **`BUILD_ROOT` (`/data/build`) is NOT plain ephemeral container disk,
+  despite the original design intent.** This Space has Persistent Storage
+  attached, and `/data` is its mount point -- bucket-backed
   (`cleverheart2026/mflux-model-gpu-runner-storage`, the same bucket the
-  outbox now uses under a different prefix), billed separately, and
-  survives a container restart. Source weights still come from mflux's own
-  model-loading path pulling straight from the HF Hub (HF's own cache dir,
-  which does live under `/data` too) -- that part of the "no ephemeral
-  storage" goal holds. Whether to detach Persistent Storage and go back to
-  genuinely ephemeral local disk, or keep it and lean into it (e.g. as a
-  warm HF-cache to skip re-downloading source weights across builds), is an
-  open decision, not made yet.
+  outbox uses under a different prefix), billed separately, and survives a
+  container restart. `BUILD_ROOT` itself stays there (unchanged, and it has
+  at least one confirmed-working build+upload on record).
+- **Source weights are deliberately NOT cached on `/data`, decided
+  2026-08-20 after trying it and reverting.** `HF_HUB_CACHE` was pointed at
+  `/data/hf_hub` to survive restarts without a repeat ~20GB+ download per
+  model -- every build attempt after that produced real I/O errors on that
+  mount (`RuntimeError: [read] Unable to read 8 bytes from file`, then
+  `OSError: [Errno 5] Input/output error` reading even a tiny internal HF
+  cache bookkeeping file), while the one build that succeeded (`q3`, before
+  this was set) predates it entirely. Reverted: `HF_HUB_CACHE` is unset in
+  `docker-runner-hf/Dockerfile`, so mflux's model-loading falls back to its
+  default (`~/.cache/huggingface`, genuine ephemeral container disk) --
+  trading away cross-restart persistence for actual read reliability, which
+  matters more. `/data` may simply not be reliable enough for this
+  workload's read/write pattern; not yet tested whether `BUILD_ROOT` itself
+  is equally at risk, only that it hasn't failed yet.
 - **Required Space secrets**: `HF_TOKEN` (write-scoped, `mflux-community`
   org -- also the outbox credential now, see below) and, optionally,
   `WORKER_API_KEY` (see `docker-runner-hf/README.md`). Set in the Space's

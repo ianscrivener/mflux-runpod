@@ -95,9 +95,9 @@ per-model `/generate` trigger by hand. Building that link (a "process queue"
 button/endpoint) is the natural next increment after this UI ships, not
 something to silently assume exists.
 
-`POST /models_queue/publish` / `POST /models_queue/restore` (DO Spaces
-master round-trip) — a small "sync" affordance on this page, not
-day-to-day-critical.
+`POST /models_queue/publish` / `POST /models_queue/restore` (HF-bucket
+master round-trip, `app/queue_store.py` -- moved off DO Spaces 2026-08-20)
+— a small "sync" affordance on this page, not day-to-day-critical.
 
 ### 4. Generate / Runs (`POST /generate`, `POST /generate/{run_id}/cancel`, `GET /report`, `DELETE /report`)
 

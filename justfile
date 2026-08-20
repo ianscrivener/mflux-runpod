@@ -180,11 +180,24 @@ hf-push msg="Update GPU worker": update-docker-runner
     #!/usr/bin/env bash
     set -euo pipefail
     cd docker-runner-hf
+    # docker-runner-hf/ only ever holds files meant to be committed here --
+    # the update-docker-runner-synced app/*.py, and Dockerfile/worker.py/
+    # README.md authored directly in this repo -- so `git add -A` staging
+    # "everything changed" is intentional, not a wildcard shortcut. But a
+    # stray untracked file (a debug script, a local secrets file) landing
+    # in this checkout would get swept in the same way, so abort instead of
+    # silently pushing it if anything outside that known set shows up.
+    unexpected=$(git status --porcelain | awk '{print $2}' | grep -Ev '^(Dockerfile|worker\.py|README\.md|\.gitignore|app/)' || true)
+    if [ -n "$unexpected" ]; then
+        echo "Refusing to push -- unexpected path(s) in docker-runner-hf/, review before committing:" >&2
+        echo "$unexpected" >&2
+        exit 1
+    fi
     git add -A
     if git diff --cached --quiet; then
         echo "Nothing to push -- docker-runner-hf/ has no changes after sync."
         exit 0
     fi
-    git commit -m "{{ msg }}"
+    git commit -m {{ quote(msg) }}
     git push
     echo "Pushed to the HF Space -- rebuild should start automatically."

@@ -74,7 +74,12 @@ def put_result(run_id: int, quant: str, payload: dict) -> str:
 
 def list_pending() -> list[str]:
     """List every pending result object key. Bucket listing order isn't
-    upload-time-ordered, but processing order doesn't matter here."""
+    upload-time-ordered, but processing order doesn't matter here.
+
+    list_bucket_tree(recursive=True) yields BucketFolder entries (e.g. the
+    per-run_id subdirectory) alongside BucketFile ones -- both have a
+    `.path`, so without filtering, a folder path could reach get_result()
+    downstream and fail there instead of being excluded here."""
     import huggingface_hub as hf
 
     return [
@@ -82,6 +87,7 @@ def list_pending() -> list[str]:
         for f in hf.list_bucket_tree(
             _bucket_id(), prefix=RESULTS_PREFIX, recursive=True, token=_token()
         )
+        if f.type == "file"
     ]
 
 

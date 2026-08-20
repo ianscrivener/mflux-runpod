@@ -62,12 +62,29 @@ def test_list_pending_returns_paths(monkeypatch):
     monkeypatch.setattr(
         "huggingface_hub.list_bucket_tree",
         lambda bucket_id, prefix=None, recursive=None, token=None: [
-            SimpleNamespace(path="results/1/q4.json"),
-            SimpleNamespace(path="results/2/q8.json"),
+            SimpleNamespace(path="results/1/q4.json", type="file"),
+            SimpleNamespace(path="results/2/q8.json", type="file"),
         ],
     )
 
     assert list_pending() == ["results/1/q4.json", "results/2/q8.json"]
+
+
+def test_list_pending_excludes_folders(monkeypatch):
+    """list_bucket_tree(recursive=True) yields BucketFolder entries (e.g.
+    the per-run_id subdirectory) alongside BucketFile ones -- both expose
+    .path, so a folder must be excluded by .type, not just ignored."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "huggingface_hub.list_bucket_tree",
+        lambda bucket_id, prefix=None, recursive=None, token=None: [
+            SimpleNamespace(path="results/1", type="folder"),
+            SimpleNamespace(path="results/1/q4.json", type="file"),
+        ],
+    )
+
+    assert list_pending() == ["results/1/q4.json"]
 
 
 def test_get_result_downloads_and_parses(monkeypatch, tmp_path):
@@ -108,7 +125,7 @@ def test_process_pending_applies_and_deletes(monkeypatch):
     monkeypatch.setattr(
         "huggingface_hub.list_bucket_tree",
         lambda bucket_id, prefix=None, recursive=None, token=None: [
-            SimpleNamespace(path="results/9/q4.json")
+            SimpleNamespace(path="results/9/q4.json", type="file")
         ],
     )
 

@@ -1,9 +1,11 @@
+import httpx
 import pytest
 
 import app.db as db_module
 from app.db import init_db
 from app.generate import (
     DispatchConfigError,
+    InvalidQuantsError,
     UnknownModelError,
     cancel_run,
     dispatch_trigger,
@@ -31,6 +33,19 @@ def stub_models_hf(monkeypatch, tmp_path):
 def test_resolve_generate_config_unknown_model():
     with pytest.raises(UnknownModelError):
         resolve_generate_config("Not-A-Real-Model")
+
+
+def test_resolve_generate_config_rejects_bad_quant_names():
+    """Confirmed live 2026-08-20: a webapp form field with plain '4' (not
+    'q4') sailed through to the worker and crashed deep inside
+    build_and_upload_one_quant instead of failing fast here."""
+    with pytest.raises(InvalidQuantsError, match="4"):
+        resolve_generate_config("Fibo", quants=["4"])
+
+
+def test_resolve_generate_config_accepts_real_quant_names():
+    config = resolve_generate_config("Fibo", quants=["q4", "bf16"])
+    assert config["quants"] == ["q4", "bf16"]
 
 
 def test_resolve_generate_config_applies_overrides():
@@ -169,6 +184,53 @@ def test_dispatch_trigger_posts_one_build_per_quant(monkeypatch):
     assert body["run_id"] == 42
     assert body["already_published"] is False
     assert body["config"]["model_object"] == "FIBO"  # the real loaded config, not a stub
+
+
+def test_dispatch_trigger_reports_partial_failure(monkeypatch):
+    """A failure partway through the loop must not surface as a bare httpx
+    exception -- the caller needs to know which quants (if any) already
+    queued successfully before the one that failed."""
+    monkeypatch.setenv("HF_WORKER_URL", "https://example-worker.hf.space")
+    monkeypatch.setenv("HF_TOKEN", "hf-token-value")
+    monkeypatch.delenv("WORKER_API_KEY", raising=False)
+
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, quant):
+            self._quant = quant
+
+        def raise_for_status(self):
+            if self._quant == "q8":
+                raise httpx.HTTPStatusError("boom", request=None, response=None)
+
+        def json(self):
+            return {"queued": True, "queue_depth": 1}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            calls.append(json["quant"])
+            return FakeResponse(json["quant"])
+
+    monkeypatch.setattr("httpx.Client", FakeClient)
+
+    plan = {"quants_to_build": ["q4", "q8", "bf16"], "force_hf_overwrite": False}
+    with pytest.raises(DispatchConfigError, match=r"q8.*q4.*bf16") as exc_info:
+        dispatch_trigger("Fibo", run_id=1, plan=plan)
+    assert "q4" in str(exc_info.value)  # successfully queued, mentioned
+    assert "bf16" in str(exc_info.value)  # never attempted, mentioned
+
+    # q4 was queued before the q8 failure; bf16 was never attempted.
+    assert calls == ["q4", "q8"]
 
 
 def test_cancel_run_unknown_run_raises():

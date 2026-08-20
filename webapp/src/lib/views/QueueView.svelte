@@ -112,8 +112,11 @@
   async function doPublish() {
     syncMsg = "publishing…";
     try {
-      const res = await api.queuePublish();
-      syncMsg = res.published === false ? `publish failed: ${res.publish_error}` : "published to HF-bucket master";
+      // POST /models_queue/publish is all-or-nothing: it either succeeds
+      // ({master, mirror}) or throws (caught below, same as any other
+      // request failure) -- there's no partial-failure shape to inspect.
+      await api.queuePublish();
+      syncMsg = "published to HF-bucket master";
     } catch (e) {
       syncMsg = e.message;
     }

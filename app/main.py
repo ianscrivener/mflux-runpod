@@ -471,7 +471,7 @@ def generate(request: GenerateRequest):
     """Plan+record one model's generation run. Dry-runs by default (plans
     and records a `runs` row only) — pass dispatch=true to dispatch real GPU
     jobs to the HF Spaces worker (see app/generate.py::dispatch_trigger)."""
-    from app.generate import DispatchConfigError, dispatch_trigger
+    from app.generate import DispatchConfigError, InvalidQuantsError, dispatch_trigger
 
     trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
     try:
@@ -485,6 +485,8 @@ def generate(request: GenerateRequest):
         )
     except UnknownModelError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidQuantsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

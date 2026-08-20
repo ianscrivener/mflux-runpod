@@ -51,6 +51,21 @@ class DispatchConfigError(RuntimeError):
     pass
 
 
+class InvalidQuantsError(ValueError):
+    """Raised when a caller-supplied quant isn't one of the real quant
+    names (q3/q4/q5/q6/q8/bf16) -- confirmed live 2026-08-20: a webapp form
+    field with a plain "4" (not "q4") sailed straight through generate_one,
+    got dispatched to the worker, and only failed there with a bare
+    KeyError deep inside build_and_upload_one_quant, after real GPU time
+    was already spent queuing it. Catching this here means a bad request
+    fails fast, before dispatch_trigger ever runs."""
+
+    pass
+
+
+VALID_QUANTS = {"q3", "q4", "q5", "q6", "q8", "bf16"}
+
+
 def resolve_generate_config(
     model_stem: str,
     quants: list[str] | None = None,
@@ -61,6 +76,14 @@ def resolve_generate_config(
     configs = load_configs()
     if model_stem not in configs:
         raise UnknownModelError(f"no configs/{model_stem}.yaml found")
+
+    if quants is not None:
+        bad = [q for q in quants if q not in VALID_QUANTS]
+        if bad:
+            raise InvalidQuantsError(
+                f"invalid quant(s) {bad} -- must be one of {sorted(VALID_QUANTS)} "
+                "(e.g. 'q4', not '4')"
+            )
 
     config = dict(configs[model_stem])
     if quants is not None:
@@ -133,8 +156,24 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
                 # is by construction not already published.
                 "already_published": False,
             }
-            response = client.post(f"{worker_url.rstrip('/')}/build", headers=headers, json=job)
-            response.raise_for_status()
+            try:
+                response = client.post(f"{worker_url.rstrip('/')}/build", headers=headers, json=job)
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                # A mid-loop failure used to propagate as a bare httpx
+                # exception, silently dropping which quants (if any) had
+                # already been queued on the worker's side before it -- the
+                # caller (and the `runs` row) had no way to tell partial
+                # dispatch from total failure. No retry/idempotency here
+                # (that needs a worker-side dedup key, a real feature, not
+                # a minimal fix) -- just stop and report accurately instead
+                # of guessing whether it's safe to keep going.
+                remaining = [q for q in plan["quants_to_build"] if q not in [j["quant"] for j in queued] + [quant]]
+                raise DispatchConfigError(
+                    f"dispatch failed on quant {quant!r} after successfully "
+                    f"queuing {[j['quant'] for j in queued]} -- {exc}. "
+                    f"{remaining} were never attempted."
+                ) from exc
             queued.append({"quant": quant, **response.json()})
 
     return {"dispatched": True, "run_id": run_id, "jobs": queued}
