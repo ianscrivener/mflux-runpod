@@ -1,0 +1,14 @@
+model_object: Flux1
+model_config: krea_dev
+hf_model_name: black-forest-labs/FLUX.1-Krea-dev
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Flux.1 Krea Dev
+  description: MFlux quantized builds of Flux.1 Krea Dev
+  version: 1.0.0

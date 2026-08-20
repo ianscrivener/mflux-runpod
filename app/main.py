@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.db import init_db
-from app.generate import UnknownModelError, dry_run_trigger, generate_all, generate_one
+from app.generate import UnknownModelError, dry_run_trigger, generate_one
 from app.models_hf import update_models_hf
 from app.models_missing import compute_missing, load_configs, load_overrides
 from app.report import (
@@ -78,7 +78,7 @@ async def _models_hf_refresh_loop() -> None:
     while True:
         try:
             if _stale(DATA_PATH, MODELS_HF_REFRESH_INTERVAL_S):
-                result = update_models_hf()
+                result = await asyncio.to_thread(update_models_hf)
                 logger.info("models_hf refresh: %d models", len(result.get("hf_models", [])))
             rebuild_if_needed()
         except HfDatasetConfigError:
@@ -105,7 +105,7 @@ async def _models_src_details_refresh_loop() -> None:
     while True:
         try:
             if _stale(DATA_PATH, MODELS_SRC_DETAILS_REFRESH_INTERVAL_S):
-                result = refresh_models_src_details()
+                result = await asyncio.to_thread(refresh_models_src_details)
                 logger.info("models_src_details refresh: %d source repos", len(result))
             rebuild_if_needed()
         except HfDatasetConfigError:
@@ -138,7 +138,7 @@ async def _hf_sync_loop() -> None:
     while True:
         for name in dataset_names:
             try:
-                pull(name)
+                await asyncio.to_thread(pull, name)
             except HfDatasetConfigError as exc:
                 # Per-dataset, recoverable (e.g. a dataset that's never been
                 # pushed yet, so it doesn't exist in the bucket) -- log and
@@ -424,7 +424,7 @@ def model_store():
 class GenerateRequest(BaseModel):
     config_stem: str = Field(
         ...,
-        description="Model series to generate, matching a configs/{config_stem}.yaml "
+        description="Model series to generate, matching a configs/models/{config_stem}.yaml "
         "file exactly (see GET /models_mflux or /models_missing for valid values). "
         "Case-sensitive filename stem, not the Hugging Face model name.",
         examples=["Fibo"],
@@ -513,31 +513,6 @@ def generate_cancel(run_id: int):
         return cancel_run(run_id)
     except UnknownModelError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except DispatchConfigError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-class GenerateAllRequest(BaseModel):
-    dispatch: bool = Field(
-        default=False,
-        description="Same opt-in as /generate's dispatch field, applied to every "
-        "series GET /models_missing currently reports as missing at least one quant. "
-        "false (default) dry-runs all of them; true dispatches a real GPU job per "
-        "missing quant, across every missing series, in one call.",
-    )
-
-    model_config = {"json_schema_extra": {"examples": [{"dispatch": False}]}}
-
-
-@app.post("/generate_all", summary="Plan (and optionally dispatch) every missing series")
-def generate_all_endpoint(request: GenerateAllRequest = GenerateAllRequest()):
-    """Plan+record a run for every series /models_missing reports. Same
-    dispatch opt-in as /generate — defaults to dry-run."""
-    from app.generate import DispatchConfigError, dispatch_trigger
-
-    trigger_fn = dispatch_trigger if request.dispatch else dry_run_trigger
-    try:
-        return {"runs": generate_all(trigger_fn=trigger_fn)}
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

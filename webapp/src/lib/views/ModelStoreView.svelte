@@ -23,7 +23,7 @@
 </script>
 
 <h2 style="margin-bottom:4px">Model Store</h2>
-<p class="muted" style="font-size:12px; margin-top:0 0 12px 0">
+<p class="muted" style="font-size:12px; margin:0 0 12px 0">
   Active ephemeral per-series RunPod build volumes — build-scratch space, not the finished model catalog (that's the Hugging Face org, see Models).
 </p>
 

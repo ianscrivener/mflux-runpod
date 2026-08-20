@@ -95,9 +95,10 @@ svc-del:
     echo "Removed {{ label }}"
 
 # Hit the local Orchestrator's endpoints and print a one-line summary each.
-# Starts it in the background first if it's not already running (on whatever
-# port it's already up on if so, else 8000); only stops it again afterward
-# if this recipe was the one that started it.
+# Always targets port 8000 -- starts it in the background there first if
+# nothing's already listening on 8000, and only stops it again afterward if
+# this recipe was the one that started it. Does not detect a server already
+# running on some other port.
 test-api:
     #!/usr/bin/env bash
     set -uo pipefail  # no -e: cleanup below must still run if the check fails

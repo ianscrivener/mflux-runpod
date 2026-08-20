@@ -1,0 +1,14 @@
+model_object: LensImage
+model_config: lens_turbo
+hf_model_name: Comfy-Org/Lens
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Lens Turbo
+  description: MFlux quantized builds of Lens Turbo
+  version: 1.0.0

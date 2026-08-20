@@ -34,8 +34,8 @@ HF_ORG = "mflux-community"
 # assumed to support, replacing configs/models/*.yaml's per-model `quants`
 # field as the source of truth for app.models_catalog.get_available_models().
 # compute_missing() below is UNCHANGED and still reads each config's own
-# `quants` list -- it backs real dispatch (generate_one/generate_all), which
-# still requires a configs/models/*.yaml file to exist regardless of this set.
+# `quants` list -- it backs real dispatch (generate_one), which still
+# requires a configs/models/*.yaml file to exist regardless of this set.
 DEFAULT_QUANTS = ["q3", "q4", "q5", "q6", "q8", "bf16"]
 
 
@@ -98,7 +98,24 @@ def load_models_skipped(path: Path = MODELS_SKIPPED_PATH) -> dict:
     empty = {"families": set(), "sub_families": set(), "models": set(), "quants": {}}
     if not path.exists():
         return empty
-    data = json.loads(path.read_text()) or {}
+    try:
+        data = json.loads(path.read_text()) or {}
+    except json.JSONDecodeError:
+        # Hand-edited file, mid-edit or just broken -- degrade to "nothing
+        # skipped" rather than crash every /models_available call over it
+        # (confirmed live this session: a stray trailing comma did exactly
+        # that before this guard existed).
+        return empty
+
+    def _string_set(key: str) -> set[str]:
+        values = data.get(key)
+        if not isinstance(values, list):
+            # Missing, null, or some other hand-editing mistake (a dict/
+            # string where a list was expected) -- treat as empty rather
+            # than crash on the isinstance check below.
+            return set()
+        return {v.lower() for v in values if isinstance(v, str)}
+
     quants = data.get("skipped_quants", {})
     if not isinstance(quants, dict):
         # Hand-editing mistake: someone wrote "skipped_quants": [] (an empty
@@ -106,9 +123,9 @@ def load_models_skipped(path: Path = MODELS_SKIPPED_PATH) -> dict:
         # rather than crash every /models_available call over it.
         quants = {}
     return {
-        "families": {f.lower() for f in data.get("skipped_familys", [])},
-        "sub_families": {f.lower() for f in data.get("skipped_model_sub_familys", [])},
-        "models": {m.lower() for m in data.get("skipped_models", [])},
+        "families": _string_set("skipped_familys"),
+        "sub_families": _string_set("skipped_model_sub_familys"),
+        "models": _string_set("skipped_models"),
         "quants": quants,
     }
 

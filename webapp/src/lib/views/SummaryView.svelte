@@ -42,10 +42,12 @@
     }
     const hfFamilies = new Set();
     const hfSlugs = new Set();
+    let hfQuantCount = 0;
     for (const m of hfModels) {
       const name = m.model_name.includes("/") ? m.model_name.split("/")[1] : m.model_name;
       const match = name.match(/^(.+)-mflux-(q3|q4|q5|q6|q8|bf16)$/);
-      if (!match) continue;
+      if (!match) continue; // doesn't fit our publish-naming convention -- not one of ours to count
+      hfQuantCount += 1;
       hfSlugs.add(match[1]);
       const fam = byHfRepoSlug[match[1]]?.model_family;
       if (fam) hfFamilies.add(fam);
@@ -53,7 +55,7 @@
 
     return {
       supported: { families: supportedFamilies.size, models: buildable.length, quants: supportedQuants },
-      published: { families: hfFamilies.size, models: hfSlugs.size, quants: hfModels.length },
+      published: { families: hfFamilies.size, models: hfSlugs.size, quants: hfQuantCount },
     };
   });
 </script>

@@ -7,7 +7,6 @@ from app.generate import (
     UnknownModelError,
     cancel_run,
     dry_run_trigger,
-    generate_all,
     generate_one,
     resolve_generate_config,
 )
@@ -104,19 +103,10 @@ def test_generate_one_force_overwrite_includes_all_quants(monkeypatch):
     assert set(result["plan"]["quants_to_build"]) == {"q4", "q6", "q8", "bf16"}
 
 
-def test_generate_all_covers_every_missing_series():
-    results = generate_all()
-
-    model_stems = {r["plan"]["model_stem"] for r in results}
-    assert "Fibo" in model_stems
-    assert "Qwen-Image-Edit" in model_stems
-    assert all(r["dispatch"]["dispatched"] is False for r in results)
-
-
 def test_generate_one_makes_no_runpod_call(monkeypatch):
-    """generate_one/generate_all must never touch RunPod directly — volume
-    creation belongs to a real trigger_fn, not the planning path. Fail loudly
-    if that boundary is ever crossed again."""
+    """generate_one must never touch RunPod directly — volume creation
+    belongs to a real trigger_fn, not the planning path. Fail loudly if
+    that boundary is ever crossed again."""
     import app.runpod_volumes as runpod_volumes_module
 
     def poison(*args, **kwargs):
@@ -126,7 +116,6 @@ def test_generate_one_makes_no_runpod_call(monkeypatch):
     monkeypatch.setattr(runpod_volumes_module, "list_volumes", poison)
 
     generate_one("Fibo")  # must not raise
-    generate_all()  # must not raise
 
 
 def test_cancel_run_unknown_run_raises():

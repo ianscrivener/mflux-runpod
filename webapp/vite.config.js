@@ -19,7 +19,6 @@ const API_PREFIXES = [
   "datasets",
   "model_store",
   "generate",
-  "generate_all",
   "report",
   "outbox",
   "health",

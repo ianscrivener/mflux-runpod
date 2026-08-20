@@ -40,7 +40,16 @@
   async function toggle(run) {
     expanded = { ...expanded, [run.id]: !expanded[run.id] };
     if (expanded[run.id] && !details[run.id]) {
-      details = { ...details, [run.id]: await api.report({ run_id: run.id }) };
+      try {
+        details = { ...details, [run.id]: await api.report({ run_id: run.id }) };
+      } catch (e) {
+        // Populate details even on failure -- {#if !details[run.id]} below
+        // is what shows "Loading…", so leaving it unset on a rejected fetch
+        // means the row stays stuck there forever (only a second toggle,
+        // discovered by accident, retries the fetch). quant_builds: [] so
+        // the existing quant-builds table render doesn't crash on it.
+        details = { ...details, [run.id]: { quant_builds: [], error: e.message } };
+      }
     }
   }
 
@@ -87,8 +96,12 @@
 
   async function clearLog() {
     if (!confirm("Clear the entire generation log (runs + quant_builds)? This is irreversible.")) return;
-    await api.reportClear();
-    await load();
+    try {
+      await api.reportClear();
+      await load();
+    } catch (e) {
+      error = e.message;
+    }
   }
 </script>
 
@@ -125,8 +138,16 @@
       </thead>
       <tbody>
         {#each runs as run (run.id)}
-          <tr class="clickable" onclick={() => toggle(run)}>
-            <td>{expanded[run.id] ? "▾" : "▸"}</td>
+          <tr>
+            <td>
+              <button
+                type="button"
+                class="row-toggle"
+                onclick={() => toggle(run)}
+                aria-expanded={!!expanded[run.id]}
+                aria-label="Toggle details for run {run.id}"
+              >{expanded[run.id] ? "▾" : "▸"}</button>
+            </td>
             <td class="muted">{run.id}</td>
             <td><strong>{run.model_series}</strong></td>
             <td><StatusPill status={run.status} /></td>
@@ -135,7 +156,7 @@
             <td class="muted">{run.expected_quants}</td>
             <td>
               {#if run.status === "running"}
-                <button class="danger" disabled={busy[run.id]} onclick={(e) => { e.stopPropagation(); cancel(run); }}>
+                <button class="danger" disabled={busy[run.id]} onclick={() => cancel(run)}>
                   Cancel
                 </button>
               {/if}
@@ -206,8 +227,16 @@
     color: var(--muted);
     white-space: nowrap;
   }
-  tr.clickable {
+  .row-toggle {
+    all: unset;
     cursor: pointer;
+    font: inherit;
+    color: inherit;
+    padding: 2px 6px;
+  }
+  .row-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   table.nested {
     margin: 4px 0;

@@ -1,9 +1,12 @@
 """MFlux models published on the mflux-community HF org (PRD: /models_hf, /models_hf/update)."""
 
 import json
+import logging
 import os
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Overridable via MODELS_HF_PATH so the deployed Orchestrator can put this on
 # its mounted NetworkVolume (/runpod-volume), same as db.py does with
@@ -121,8 +124,16 @@ def update_models_hf(organization: str | None = None, data_path: Path | None = N
     # refresh + publish it too, so anything consuming data-hf-sync/models_missing.json
     # directly from the bucket (rather than calling GET /models_missing, which
     # is always live-computed) doesn't see a stale diff after a fresh HF scan.
+    # Isolated: this is a secondary publish step, and the scan+write+push
+    # above already succeeded and is durably persisted -- a failure here
+    # (e.g. the bucket being briefly unreachable) must not make the caller
+    # (including the background refresh loop) think the whole refresh failed
+    # and needlessly re-scan the entire HF org next cycle.
     from app.models_missing import refresh_models_missing
 
-    refresh_models_missing()
+    try:
+        refresh_models_missing()
+    except Exception:  # noqa: BLE001 - secondary publish step, see comment above
+        logger.exception("refresh_models_missing() failed after a successful models_hf update")
 
     return manifest

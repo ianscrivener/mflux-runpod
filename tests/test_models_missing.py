@@ -206,3 +206,33 @@ def test_load_models_skipped_parses_all_four_rule_types(tmp_path):
         "models": {"dev-kontext"},
         "quants": {"flux2-klein-9b-kv": ["q3"]},
     }
+
+
+def test_load_models_skipped_invalid_json_degrades_to_all_empty(tmp_path):
+    path = tmp_path / "models_skipped.json"
+    path.write_text('{"skipped_familys": ["Flux1",]}')  # trailing comma
+
+    assert load_models_skipped(path) == {
+        "families": set(),
+        "sub_families": set(),
+        "models": set(),
+        "quants": {},
+    }
+
+
+def test_load_models_skipped_null_and_non_string_entries_degrade_gracefully(tmp_path):
+    path = tmp_path / "models_skipped.json"
+    path.write_text(
+        """{
+            "skipped_familys": null,
+            "skipped_model_sub_familys": "not-a-list",
+            "skipped_models": ["dev-kontext", 42, null],
+            "skipped_quants": {}
+        }"""
+    )
+
+    result = load_models_skipped(path)
+
+    assert result["families"] == set()
+    assert result["sub_families"] == set()
+    assert result["models"] == {"dev-kontext"}  # non-string entries dropped, not crashed on

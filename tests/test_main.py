@@ -52,13 +52,6 @@ def test_generate_known_model_dry_runs(client):
     assert "run_id" in body
 
 
-def test_generate_all_dry_runs(client):
-    resp = client.post("/generate_all")
-    assert resp.status_code == 200
-    runs = resp.json()["runs"]
-    assert len(runs) > 0
-    assert all(r["dispatch"]["dispatched"] is False for r in runs)
-
 
 def test_report_run_callback_one_quant_of_many_is_partial(client):
     """Fibo has 4 missing quants -> expected_quants=4. One quant job

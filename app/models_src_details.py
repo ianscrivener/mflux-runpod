@@ -39,6 +39,15 @@ DATA_PATH = Path(
     )
 )
 
+# HfApi.model_info()'s timeout defaults to None, which it passes straight
+# through to requests.get(timeout=None) -- genuinely unbounded, a stalled
+# connection hangs the scan (and, transitively, the thread running it)
+# forever. hf_hub_download() (used below in _fetch_text_encoders) doesn't
+# need the same treatment -- its download phase already has a bounded
+# default (10s) baked into huggingface_hub's own HF_HUB_DOWNLOAD_TIMEOUT
+# constant, and its etag_timeout param also already defaults to 10s.
+_HF_API_TIMEOUT_S = 30
+
 
 def _model_size_bytes(info) -> int:
     return sum(
@@ -94,7 +103,7 @@ def _fetch_text_encoders(repo_id: str, siblings: list[str], token: str | None) -
 
 
 def _repo_entry(api, repo_id: str, token: str | None) -> dict:
-    info = api.model_info(repo_id, files_metadata=True)
+    info = api.model_info(repo_id, files_metadata=True, timeout=_HF_API_TIMEOUT_S)
     siblings = [s.rfilename for s in info.siblings or []]
     return {
         "hf_model_name": repo_id,

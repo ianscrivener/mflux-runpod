@@ -1,0 +1,14 @@
+model_object: Flux1Fill
+model_config: dev_fill
+hf_model_name: black-forest-labs/FLUX.1-Fill-dev
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Flux.1 Dev Fill
+  description: MFlux quantized builds of Flux.1 Dev Fill
+  version: 1.0.0

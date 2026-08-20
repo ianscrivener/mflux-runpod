@@ -99,7 +99,7 @@ something to silently assume exists.
 master round-trip) — a small "sync" affordance on this page, not
 day-to-day-critical.
 
-### 4. Generate / Runs (`POST /generate`, `POST /generate_all`, `POST /generate/{run_id}/cancel`, `GET /report`, `DELETE /report`)
+### 4. Generate / Runs (`POST /generate`, `POST /generate/{run_id}/cancel`, `GET /report`, `DELETE /report`)
 
 Run history table (status, duration, per-quant results), a manual
 "generate this series" trigger with the `dispatch`/`force_hf_overwrite`
@@ -139,7 +139,6 @@ POST   /datasets/{name}/push
 GET    /model_store
 POST   /generate
 POST   /generate/{run_id}/cancel
-POST   /generate_all
 GET    /report
 GET    /report/dump
 DELETE /report

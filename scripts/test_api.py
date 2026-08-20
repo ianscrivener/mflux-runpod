@@ -52,7 +52,7 @@ def main() -> None:
 
     check("health", "GET", "/health", lambda d: d.get("status", d))
     check(
-        "models_supported", "GET", "/models_supported",
+        "models_mflux", "GET", "/models_mflux",
         lambda d: f"{len(d)} supported model configs",
     )
     check(

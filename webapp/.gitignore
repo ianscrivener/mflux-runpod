@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Vite environment files -- may hold real secrets/config; .example variants
+# are meant to be checked in as documentation, so keep those un-ignored.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,14 @@
+model_object: Flux1Kontext
+model_config: dev_kontext
+hf_model_name: black-forest-labs/FLUX.1-Kontext-dev
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Flux.1 Dev Kontext
+  description: MFlux quantized builds of Flux.1 Dev Kontext
+  version: 1.0.0

@@ -262,8 +262,8 @@ sequenceDiagram
 
 Key points:
 
-- `generate_one`/`generate_all` (`app/generate.py`) make **zero** RunPod API calls
-  themselves — they only plan and write the `runs` row. All billed work (volume
+- `generate_one` (`app/generate.py`) makes **zero** RunPod API calls
+  itself — it only plans and writes the `runs` row. All billed work (volume
   creation, job dispatch) happens inside `trigger_fn`, which defaults to
   `dry_run_trigger` (a no-op). Real dispatch requires the caller to opt in with
   `dispatch: true`, which swaps in `dispatch_trigger` — a deliberate safety
@@ -302,7 +302,6 @@ Key points:
 | `GET /model_store` | List active ephemeral per-series RunPod volumes (RunPod's own list is the source of truth, with DB rows used only to label them) |
 | `POST /generate` | Plan (and, with `dispatch: true`, actually build) one model series |
 | `POST /generate/{run_id}/cancel` | Best-effort cancel of a run's still-in-flight RunPod jobs; only marks the run terminally `cancelled` if every job cancelled |
-| `POST /generate_all` | Same, for every series `/models_missing` currently reports |
 | `POST /report/run/{run_id}` | Runner status callback (legacy direct-HTTP path; still supported, but the outbox is the primary path now) |
 | `GET /report` | Recent runs + summary stats, or one run's detail (`run_id`), or a series' history (`model_series`) |
 | `GET /report/dump` | Unlimited raw dump of every table, for offline inspection |

@@ -60,7 +60,7 @@ ORCHESTRATOR_DATACENTER = DataCenter.EU_RO_1  # Flash CPU endpoints: EU-RO-1 onl
 class GenerateRequest(BaseModel):
     config_stem: str = Field(
         ...,
-        description="Model series to generate, matching a configs/{config_stem}.yaml "
+        description="Model series to generate, matching a configs/models/{config_stem}.yaml "
         "file exactly (see GET /models_mflux or /models_missing for valid values). "
         "Case-sensitive filename stem, not the Hugging Face model name.",
         examples=["Fibo"],
@@ -124,18 +124,6 @@ class QueueEntryUpdateRequest(BaseModel):
     quants: list[str] | None = None
     force_hf_overwrite: bool | None = None
     note: str | None = None
-
-
-class GenerateAllRequest(BaseModel):
-    dispatch: bool = Field(
-        default=False,
-        description="Same opt-in as /generate's dispatch field, applied to every "
-        "series GET /models_missing currently reports as missing at least one quant. "
-        "false (default) dry-runs all of them; true dispatches a real GPU job per "
-        "missing quant, across every missing series, in one call.",
-    )
-
-    model_config = {"json_schema_extra": {"examples": [{"dispatch": False}]}}
 
 orchestrator = Endpoint(
     name="mflux-orchestrator",
@@ -433,21 +421,6 @@ async def generate_cancel(run_id: int) -> dict:
         return cancel_run(run_id)
     except UnknownModelError as exc:
         return {"error": str(exc)}
-    except DispatchConfigError as exc:
-        return {"error": str(exc)}
-
-
-@orchestrator.post("/generate_all")
-async def generate_all_route(data: GenerateAllRequest = GenerateAllRequest()) -> dict:
-    """Plan+record a run for every series GET /models_missing reports. Same
-    dispatch opt-in as /generate — defaults to dry-run."""
-    from app.db import init_db
-    from app.generate import DispatchConfigError, dispatch_trigger, dry_run_trigger, generate_all
-
-    init_db()
-    trigger_fn = dispatch_trigger if data.dispatch else dry_run_trigger
-    try:
-        return {"runs": generate_all(trigger_fn=trigger_fn)}
     except DispatchConfigError as exc:
         return {"error": str(exc)}
 

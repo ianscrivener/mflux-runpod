@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -52,11 +53,13 @@ def test_rebuild_if_needed_detects_a_changed_input_file(paths, tmp_path):
     assert rebuild_if_needed(**paths) is True
     assert rebuild_if_needed(**paths) is False
 
-    # Touch the file with new content + a fresh mtime -- must be seen as changed.
-    import time
-
-    time.sleep(0.01)
+    # Touch the file with new content + a deterministically later mtime --
+    # must be seen as changed. os.utime() rather than a sleep-then-write:
+    # some filesystems' mtime resolution is coarse enough that a short sleep
+    # doesn't guarantee the new write actually lands on a later timestamp.
     _write_json(paths["mflux_path"], {"foo": {"model_type": "image", "model_aliases": [], "mflux_cli": [], "mflux_cli_tools": [], "upstream": {}}, "bar": {"model_type": "image", "model_aliases": [], "mflux_cli": [], "mflux_cli_tools": [], "upstream": {}}})
+    later = paths["mflux_path"].stat().st_mtime + 1
+    os.utime(paths["mflux_path"], (later, later))
     assert rebuild_if_needed(**paths) is True
     assert get_mflux_catalog(**paths) == {
         "foo": {"model_type": "image", "model_family": None, "model_sub_family": None, "model_aliases": [], "upstream": {}, "mflux_cli": [], "mflux_cli_tools": []},
@@ -196,6 +199,26 @@ def test_resolve_model_slug_prefers_model_config_normalized():
     catalog = {"ernie-image": {"model_family": "ernie-image"}}
     config = {"model_config": "ernie_image", "hf_model_name": "baidu/ERNIE-Image"}
     assert resolve_model_slug(config, catalog) == "ernie-image"
+
+
+def test_resolve_model_slug_handles_dotted_version_number_in_catalog_slug():
+    """A catalog slug can embed a literal dot in a version number
+    ("z-image-turbo-controlnet-union-2.1"), which mflux's Python method-name
+    convention can't represent (no dots in identifiers), so the config's
+    model_config spells it "..._2_1". A blind underscore->hyphen replace
+    alone produces "...-2-1" and misses -- must also try dotting the final
+    underscore-separated segment."""
+    catalog = {
+        "z-image-turbo": {"upstream": {"repo": "Tongyi-MAI/Z-Image-Turbo"}},
+        "z-image-turbo-controlnet-union-2.1": {"upstream": {"repo": "Tongyi-MAI/Z-Image-Turbo"}},
+    }
+    config = {
+        "model_config": "z_image_turbo_controlnet_union_2_1",
+        "hf_model_name": "Tongyi-MAI/Z-Image-Turbo",
+    }
+    # Without the dotted-candidate fix this would fall through to the
+    # upstream.repo fallback and wrongly resolve to the shorter sibling.
+    assert resolve_model_slug(config, catalog) == "z-image-turbo-controlnet-union-2.1"
 
 
 def test_resolve_model_slug_falls_back_to_shortest_upstream_repo_match():

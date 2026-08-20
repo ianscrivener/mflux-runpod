@@ -8,10 +8,21 @@ async function request(path, options = {}) {
     ...options,
   });
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  let body = null;
+  let parseError = false;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      parseError = true;
+    }
+  }
   if (!res.ok) {
-    const detail = body && body.detail ? body.detail : res.statusText;
+    const detail = body && body.detail ? body.detail : parseError ? text : res.statusText;
     throw new Error(`${res.status} ${path}: ${detail}`);
+  }
+  if (parseError) {
+    throw new Error(`${path}: invalid JSON response: ${text}`);
   }
   return body;
 }
@@ -51,7 +62,6 @@ export const api = {
   modelStore: () => get("/model_store"),
 
   generate: (req) => post("/generate", req),
-  generateAll: (req) => post("/generate_all", req),
   generateCancel: (runId) => post(`/generate/${runId}/cancel`),
 
   report: (params = {}) => {

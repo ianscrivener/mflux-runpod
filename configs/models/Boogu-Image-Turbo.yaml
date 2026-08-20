@@ -1,0 +1,14 @@
+model_object: BooguImage
+model_config: boogu_image_turbo
+hf_model_name: Boogu/Boogu-Image-0.1-Turbo
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Boogu Image Turbo
+  description: MFlux quantized builds of Boogu Image Turbo
+  version: 1.0.0

@@ -1,0 +1,14 @@
+model_object: Flux1Controlnet
+model_config: dev_controlnet_canny
+hf_model_name: black-forest-labs/FLUX.1-dev
+quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
+  - bf16
+collection:
+  name: Flux.1 Dev ControlNet Canny
+  description: MFlux quantized builds of Flux.1 Dev ControlNet Canny
+  version: 1.0.0

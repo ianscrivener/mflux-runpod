@@ -55,46 +55,52 @@ CREATE TABLE IF NOT EXISTS catalog_build (
 );
 """
 
-# Recreated in full on every rebuild -- see module docstring.
-MIRROR_TABLES_SCHEMA = """
-DROP TABLE IF EXISTS mflux_catalog;
-CREATE TABLE mflux_catalog (
-    slug              TEXT PRIMARY KEY,
-    model_type        TEXT,
-    model_family      TEXT,
-    model_sub_family  TEXT,
-    model_aliases     TEXT NOT NULL,  -- JSON array
-    upstream          TEXT NOT NULL,  -- JSON object; some entries carry extra keys
-                                       -- beyond repo/license/status (controlnet_repo,
-                                       -- custom_transformer_repo), so this is stored
-                                       -- whole rather than flattened into columns
-    mflux_cli         TEXT NOT NULL,  -- JSON array
-    mflux_cli_tools   TEXT NOT NULL,  -- JSON array
-    quants            TEXT             -- JSON array; NULL if the catalog entry has no quants key (non-image tools)
-);
-
-DROP TABLE IF EXISTS published_quants;
-CREATE TABLE published_quants (
-    model_name   TEXT PRIMARY KEY,
-    size_gb      REAL,
-    upload_date  TEXT,
-    upload_user  TEXT,
-    commit_hash  TEXT
-);
-
-DROP TABLE IF EXISTS source_repos;
-CREATE TABLE source_repos (
-    repo_id            TEXT PRIMARY KEY,
-    size_gb            REAL,
-    size_text_encoder  REAL,
-    size_transformers  REAL,
-    commit_hash        TEXT,
-    last_modified      TEXT,
-    text_encoder       TEXT,  -- JSON array; NULL if unknown (not a diffusers pipeline)
-    readme_meta        TEXT,  -- JSON object; NULL if the repo has no card metadata
-    error              TEXT   -- non-NULL only if this repo's scan failed
-);
-"""
+# Recreated in full on every rebuild -- see module docstring. A list of
+# individual statements, not one executescript() blob: Cursor.executescript()
+# implicitly COMMITs any open transaction before it runs, and applies no
+# transaction wrapping of its own -- so the DROP+CREATE+INSERT sequence
+# would NOT be atomic (a concurrent reader could see an empty table mid-
+# rebuild), and it can't be safely nested inside our own BEGIN IMMEDIATE in
+# rebuild_if_needed() either, since it would just commit that transaction
+# out from under us. Individual execute() calls stay inside whatever
+# transaction the caller already opened.
+MIRROR_TABLES_STATEMENTS = [
+    "DROP TABLE IF EXISTS mflux_catalog",
+    """CREATE TABLE mflux_catalog (
+        slug              TEXT PRIMARY KEY,
+        model_type        TEXT,
+        model_family      TEXT,
+        model_sub_family  TEXT,
+        model_aliases     TEXT NOT NULL,  -- JSON array
+        upstream          TEXT NOT NULL,  -- JSON object; some entries carry extra keys
+                                           -- beyond repo/license/status (controlnet_repo,
+                                           -- custom_transformer_repo), so this is stored
+                                           -- whole rather than flattened into columns
+        mflux_cli         TEXT NOT NULL,  -- JSON array
+        mflux_cli_tools   TEXT NOT NULL,  -- JSON array
+        quants            TEXT             -- JSON array; NULL if the catalog entry has no quants key (non-image tools)
+    )""",
+    "DROP TABLE IF EXISTS published_quants",
+    """CREATE TABLE published_quants (
+        model_name   TEXT PRIMARY KEY,
+        size_gb      REAL,
+        upload_date  TEXT,
+        upload_user  TEXT,
+        commit_hash  TEXT
+    )""",
+    "DROP TABLE IF EXISTS source_repos",
+    """CREATE TABLE source_repos (
+        repo_id            TEXT PRIMARY KEY,
+        size_gb            REAL,
+        size_text_encoder  REAL,
+        size_transformers  REAL,
+        commit_hash        TEXT,
+        last_modified      TEXT,
+        text_encoder       TEXT,  -- JSON array; NULL if unknown (not a diffusers pipeline)
+        readme_meta        TEXT,  -- JSON object; NULL if the repo has no card metadata
+        error              TEXT   -- non-NULL only if this repo's scan failed
+    )""",
+]
 
 
 def _ensure_build_table(conn) -> None:
@@ -154,7 +160,8 @@ def _rebuild(
     hf_manifest = load_models_hf(models_hf_path)
     src_details = load_models_src_details(src_details_path)
 
-    conn.executescript(MIRROR_TABLES_SCHEMA)
+    for statement in MIRROR_TABLES_STATEMENTS:
+        conn.execute(statement)
 
     conn.executemany(
         """INSERT INTO mflux_catalog
@@ -236,7 +243,16 @@ def rebuild_if_needed(
     """Rebuild the mirror tables if any watched input file changed since the
     last rebuild (or nothing's been built yet). Returns whether it rebuilt.
     Cheap when nothing changed -- a handful of stat() calls plus one indexed
-    SELECT."""
+    SELECT.
+
+    The check-then-rebuild sequence runs inside one BEGIN IMMEDIATE
+    transaction: every GET /models_* route is a sync `def` (Starlette runs
+    those in its threadpool), so two requests can genuinely call this
+    concurrently in different threads. BEGIN IMMEDIATE acquires the write
+    lock up front and blocks a second concurrent caller until the first
+    finishes; re-checking the fingerprint after acquiring the lock means
+    that second caller then sees the now-current fingerprint and skips a
+    redundant rebuild instead of racing to repeat it."""
     defaults = _default_paths()
     mflux_path = mflux_path or defaults["mflux_path"]
     models_hf_path = models_hf_path or defaults["models_hf_path"]
@@ -247,12 +263,18 @@ def rebuild_if_needed(
     fingerprint = _input_fingerprint(mflux_path, models_hf_path, src_details_path, configs_dir, overrides_path)
 
     with get_connection(db_path) as conn:
-        _ensure_build_table(conn)
-        row = conn.execute("SELECT input_version FROM catalog_build WHERE id = 1").fetchone()
-        if not force and row is not None and row["input_version"] == fingerprint:
-            return False
-        _rebuild(conn, fingerprint, mflux_path, models_hf_path, src_details_path)
-        return True
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            _ensure_build_table(conn)
+            row = conn.execute("SELECT input_version FROM catalog_build WHERE id = 1").fetchone()
+            if not force and row is not None and row["input_version"] == fingerprint:
+                conn.rollback()
+                return False
+            _rebuild(conn, fingerprint, mflux_path, models_hf_path, src_details_path)
+            return True
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def get_mflux_catalog(
@@ -413,18 +435,31 @@ def resolve_model_slug(config: dict, mflux_catalog: dict) -> str | None:
 
     Primary: config["model_config"] (its literal mflux CLI config name,
     underscore-separated) normalized to the catalog's hyphenated key
-    convention -- resolves 19/21 live. Fallback: match config["hf_model_name"]
-    against catalog entries' upstream.repo (several catalog entries -- a
-    base model plus its ControlNet/Fill/etc. variants -- can share one
-    upstream repo, so the SHORTEST matching slug is taken as the base/
-    canonical one) -- resolves 1 more. None if neither resolves, meaning the
-    model genuinely isn't in the upstream catalog yet (a real gap, not a
-    matching failure)."""
+    convention -- resolves most models live. A second normalization is tried
+    when the plain one misses: some catalog slugs embed a literal dot in a
+    version number (e.g. "z-image-turbo-controlnet-union-2.1"), which
+    mflux's Python method-name convention can't represent (dots aren't legal
+    in identifiers, so mflux spells it "z_image_turbo_controlnet_union_2_1")
+    -- a blind underscore->hyphen replace produces "...-2-1", never matching
+    the real "...-2.1" slug. Confirmed live 2026-08-20: without this, that
+    config silently fell through to the upstream.repo fallback below and
+    resolved to its shorter sibling "z-image-turbo" instead -- wrong
+    sub_family, not a crash, so easy to miss. Fallback: match
+    config["hf_model_name"] against catalog entries' upstream.repo (several
+    catalog entries -- a base model plus its ControlNet/Fill/etc. variants --
+    can share one upstream repo, so the SHORTEST matching slug is taken as
+    the base/canonical one). None if nothing resolves, meaning the model
+    genuinely isn't in the upstream catalog yet (a real gap, not a matching
+    failure)."""
     model_config = config.get("model_config")
     if model_config:
-        key = model_config.replace("_", "-")
-        if key in mflux_catalog:
-            return key
+        candidates = [model_config.replace("_", "-")]
+        if "_" in model_config:
+            base, _, last = model_config.rpartition("_")
+            candidates.append(f"{base.replace('_', '-')}.{last}")
+        for key in candidates:
+            if key in mflux_catalog:
+                return key
 
     hf_model_name = config.get("hf_model_name")
     if hf_model_name:
@@ -518,8 +553,8 @@ def compute_available_models(
     per-model `quants` field), minus whatever data-hf-sync/models_skipped.json
     excludes (see app.models_missing.load_models_skipped for its shape).
     compute_missing() is untouched and still backs real dispatch
-    (generate_one/generate_all) -- this is the informational, broader-than-
-    dispatchable listing the Models/Summary pages show.
+    (generate_one) -- this is the informational, broader-than-dispatchable
+    listing the Models/Summary pages show.
 
     Returns {id: {...}} where `id` is the configs/models/*.yaml stem when one
     resolves to this catalog slug (via resolve_model_slug, reversed), else
@@ -559,7 +594,7 @@ def compute_available_models(
     skipped_quants = skip_rules.get("quants", {})
 
     def catalog_entry_skipped(slug: str, entry: dict) -> bool:
-        if slug in skipped_models:
+        if slug.lower() in skipped_models:
             return True
         family = (entry.get("model_family") or "").lower()
         sub_family = (entry.get("model_sub_family") or "").lower()

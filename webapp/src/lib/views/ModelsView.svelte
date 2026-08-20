@@ -145,6 +145,11 @@
     }
   }
 
+  function ariaSort(column) {
+    if (sortColumn !== column) return "none";
+    return sortDirection === "asc" ? "ascending" : "descending";
+  }
+
   function textEncoderDisplay(id) {
     const te = srcDetails[id]?.text_encoder;
     if (!te) return "";
@@ -275,20 +280,30 @@
       <thead>
         <tr>
           <th>#</th>
-          <th class="sortable" class:sorted={sortColumn === "modelType"} onclick={() => toggleSort("modelType")}>
-            Model Type{#if sortColumn === "modelType"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+          <th aria-sort={ariaSort("modelType")}>
+            <button type="button" class="sortable" class:sorted={sortColumn === "modelType"} onclick={() => toggleSort("modelType")}>
+              Model Type{#if sortColumn === "modelType"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+            </button>
           </th>
-          <th class="sortable" class:sorted={sortColumn === "family"} onclick={() => toggleSort("family")}>
-            Family{#if sortColumn === "family"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+          <th aria-sort={ariaSort("family")}>
+            <button type="button" class="sortable" class:sorted={sortColumn === "family"} onclick={() => toggleSort("family")}>
+              Family{#if sortColumn === "family"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+            </button>
           </th>
-          <th class="sortable" class:sorted={sortColumn === "stem"} onclick={() => toggleSort("stem")}>
-            Model{#if sortColumn === "stem"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+          <th aria-sort={ariaSort("stem")}>
+            <button type="button" class="sortable" class:sorted={sortColumn === "stem"} onclick={() => toggleSort("stem")}>
+              Model{#if sortColumn === "stem"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+            </button>
           </th>
-          <th class="sortable" class:sorted={sortColumn === "gb"} onclick={() => toggleSort("gb")}>
-            GB{#if sortColumn === "gb"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+          <th aria-sort={ariaSort("gb")}>
+            <button type="button" class="sortable" class:sorted={sortColumn === "gb"} onclick={() => toggleSort("gb")}>
+              GB{#if sortColumn === "gb"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+            </button>
           </th>
-          <th class="sortable" class:sorted={sortColumn === "textEncoder"} onclick={() => toggleSort("textEncoder")}>
-            Text Encoder{#if sortColumn === "textEncoder"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+          <th aria-sort={ariaSort("textEncoder")}>
+            <button type="button" class="sortable" class:sorted={sortColumn === "textEncoder"} onclick={() => toggleSort("textEncoder")}>
+              Text Encoder{#if sortColumn === "textEncoder"}{sortDirection === "asc" ? " ▲" : " ▼"}{/if}
+            </button>
           </th>
           <th>Quants</th>
         </tr>
@@ -546,17 +561,25 @@
     text-align: center;
   }
 
-  .models-table th.sortable {
+  .models-table button.sortable {
+    all: unset;
     cursor: pointer;
     user-select: none;
+    font: inherit;
+    color: inherit;
   }
 
-  .models-table th.sortable:hover {
+  .models-table button.sortable:hover {
     color: var(--ink);
   }
 
-  .models-table th.sortable.sorted {
+  .models-table button.sortable.sorted {
     color: var(--accent);
+  }
+
+  .models-table button.sortable:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .quant-pills {

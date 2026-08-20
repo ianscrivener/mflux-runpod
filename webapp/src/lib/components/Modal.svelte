@@ -1,9 +1,58 @@
 <script>
   let { onclose, children } = $props();
 
-  function handleKeydown(e) {
-    if (e.key === "Escape") onclose();
+  let panelEl = $state();
+  let labelledBy = $state(undefined);
+
+  function focusableElements() {
+    if (!panelEl) return [];
+    return Array.from(
+      panelEl.querySelectorAll(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
   }
+
+  function trapFocus(e) {
+    const focusables = focusableElements();
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function handleKeydown(e) {
+    if (e.key === "Escape") {
+      onclose();
+      return;
+    }
+    if (e.key === "Tab") trapFocus(e);
+  }
+
+  // Move focus into the dialog on open, label it from its own content's
+  // first heading (every current usage renders one as its first child), and
+  // restore focus to whatever triggered it when the dialog closes/unmounts.
+  $effect(() => {
+    const opener = document.activeElement;
+
+    const heading = panelEl?.querySelector("h1, h2, h3, h4, h5, h6");
+    if (heading) {
+      if (!heading.id) heading.id = `modal-title-${Math.random().toString(36).slice(2)}`;
+      labelledBy = heading.id;
+    }
+
+    panelEl?.focus();
+
+    return () => {
+      opener?.focus?.();
+    };
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -12,10 +61,13 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
+    bind:this={panelEl}
     class="modal-panel card"
     onclick={(e) => e.stopPropagation()}
     role="dialog"
     aria-modal="true"
+    aria-labelledby={labelledBy}
+    aria-label={labelledBy ? undefined : "Dialog"}
     tabindex="-1"
   >
     <button type="button" class="modal-close" onclick={onclose} aria-label="Close">×</button>

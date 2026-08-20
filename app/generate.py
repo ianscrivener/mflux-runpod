@@ -1,16 +1,16 @@
-"""/generate, /generate_all (PRD tasks 7, 8, 9).
+"""/generate (PRD tasks 7, 8, 9).
 
 Plans and records a generation run for a model series: resolves its config
 (with request-param overrides), records a `runs` row, and hands off to the GPU
 Runner asynchronously via trigger_fn.
 
 SAFETY: there is no @Endpoint-deployed Runner yet (see ToDo.md task 14/15), and
-this module must never silently start real, billed RunPod work. generate_one/
-generate_all themselves make NO RunPod API calls (no volume creation, no GPU
-dispatch) — planning and DB bookkeeping only. trigger_fn defaults to a no-op
-dry-run stub. Volume creation belongs inside a real trigger_fn once a live
-Runner endpoint exists and its invocation contract is decided with the user —
-NOT in generate_one, so that even a bare call with RUNPOD_API_KEY set in the
+this module must never silently start real, billed RunPod work. generate_one
+itself makes NO RunPod API calls (no volume creation, no GPU dispatch) —
+planning and DB bookkeeping only. trigger_fn defaults to a no-op dry-run stub.
+Volume creation belongs inside a real trigger_fn once a live Runner endpoint
+exists and its invocation contract is decided with the user — NOT in
+generate_one, so that even a bare call with RUNPOD_API_KEY set in the
 environment cannot provision paid storage.
 """
 
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from app.models_hf import load_models_hf
-from app.models_missing import expected_repo_ids, load_configs, load_overrides
+from app.models_missing import expected_repo_ids, load_configs
 from app.report import create_run, finish_run, record_dispatched_job
 
 DEFAULT_MFLUX_REPO = "https://github.com/mflux-community/mflux.git"
@@ -264,19 +264,3 @@ def generate_one(
 
     dispatch = trigger_fn(model_stem, run_id, plan)
     return {"run_id": run_id, "plan": plan, "dispatch": dispatch}
-
-
-def generate_all(
-    trigger_fn: Callable[[str, int, dict], dict] = dry_run_trigger,
-) -> list[dict]:
-    """Plan+record a generation run for every series /models_missing reports."""
-    from app.models_missing import compute_missing
-
-    configs = load_configs()
-    hf_manifest = load_models_hf()
-    overrides = load_overrides()
-    missing = compute_missing(configs, hf_manifest, overrides)["missing"]
-
-    return [
-        generate_one(model_stem, trigger_fn=trigger_fn) for model_stem in missing
-    ]
