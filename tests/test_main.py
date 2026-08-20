@@ -24,8 +24,8 @@ def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
 
-def test_models_supported(client):
-    resp = client.get("/models_supported")
+def test_models_mflux(client):
+    resp = client.get("/models_mflux")
     assert resp.status_code == 200
     assert "dev" in resp.json()
 

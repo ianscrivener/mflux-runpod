@@ -2,9 +2,12 @@ model_object: SeedVR2
 model_config: seedvr2_3b
 hf_model_name: numz/SeedVR2_comfyUI
 quants:
+  - q3
   - q4
+  - q5
   - q6
   - q8
+  - bf16
 collection:
   name: SeedVR2 3B
   description: MFlux quantized builds of SeedVR2 3B

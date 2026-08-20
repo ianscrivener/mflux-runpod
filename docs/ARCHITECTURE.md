@@ -27,7 +27,7 @@ flowchart TB
 
     subgraph Orch["Orchestrator (CPU, RunPod Flash LB endpoint)"]
         API["FastAPI routes<br/>app/orchestrator_endpoint.py"]
-        DB[("reports.sqlite<br/>on mounted NetworkVolume")]
+        DB[("mflux-models.sqlite<br/>on mounted NetworkVolume")]
         OutboxPoll["/outbox/poll"]
     end
 
@@ -75,9 +75,12 @@ flowchart TB
   (Flash's generated LB lifespan doesn't support a background task) — on the
   deployed Flash endpoint, `/outbox/poll` must be triggered externally (manual
   call, cron, etc).
-- **State**: a small SQLite DB (`data/reports.sqlite` locally, or
-  `/runpod-volume/reports.sqlite` on the deployed endpoint's mounted
-  `NetworkVolume`) holding `runs`, `quant_builds`, and `series_volumes`. The
+- **State**: a small SQLite DB (`data/mflux-models.sqlite` locally, or
+  `/runpod-volume/mflux-models.sqlite` on the deployed endpoint's mounted
+  `NetworkVolume`) holding `runs`, `quant_builds`, `series_volumes`, and the
+  models-catalog master tables (`mflux_catalog`, `published_quants`,
+  `source_repos` — see `app/models_catalog.py`), rebuilt on demand from the
+  `data-hf-sync/*.json` caches rather than read from them directly. The
   Hugging Face manifest cache (`models_hf.json`) lives on the same volume for the
   same reason — without it, a scale-to-zero worker would lose its last HF scan.
 - **Never touches a GPU directly.** It plans, records, and dispatches.
@@ -141,7 +144,7 @@ might legitimately be offline for a while.
 | Tier | What lives there | Lifetime |
 |---|---|---|
 | Hugging Face (`mflux-community` org) | Finished quantized model repos + Collections | Permanent — this **is** the model store |
-| Orchestrator's own NetworkVolume (`mflux-orchestrator`, EU-RO-1) | `reports.sqlite`, `models_hf.json` cache | Persistent, survives scale-to-zero |
+| Orchestrator's own NetworkVolume (`mflux-orchestrator`, EU-RO-1) | `mflux-models.sqlite`, `models_hf.json` cache | Persistent, survives scale-to-zero |
 | Per-series ephemeral NetworkVolume (`mflux-{uuid8}-{series}`, US-IL-1) | Downloaded upstream source weights + in-progress build artifacts | Created on first missing quant for a series, deleted once every quant in that series' config is confirmed live on HF (`app/series_lifecycle.py::teardown_if_complete`) |
 
 ### HF-bucket datasets (`app/hf_datasets.py`)
@@ -196,7 +199,7 @@ of magnitude larger than others (e.g. Fibo).
 `configs/models/*.yaml` is the single source of truth for "what can be built" — a model
 present in `data-hf-sync/models_mflux.json` (the full MFlux-supported catalog) but with no
 matching `configs/models/{stem}.yaml` is invisible to `/models_missing` and `/generate`,
-even though it still shows up under `/models_supported`.
+even though it still shows up under `/models_mflux`.
 
 ```yaml
 # configs/models/Fibo.yaml
@@ -281,12 +284,24 @@ Key points:
 
 | Route | Purpose |
 |---|---|
-| `GET /models_supported` | Full MFlux-supported model catalog (`data-hf-sync/models_mflux.json`) |
+| `GET /models_mflux` | Full MFlux-supported model catalog (`data-hf-sync/models_mflux.json`) |
 | `GET /models_hf` | Cached snapshot of what's published on the `mflux-community` HF org |
 | `POST /models_hf/update` | Re-scan the HF org live, refresh the cache |
 | `GET /models_missing` | Diff `configs/models/*.yaml` against the HF cache (+ overrides) |
+| `POST /models_missing/update` | Materialize the current diff to `data-hf-sync/models_missing.json` and publish it |
+| `POST /runpod_gpu_skus/update` | Refresh RunPod GPU pricing (`app/runpod_skus.py`) and publish it |
+| `GET /models_queue` | List build-queue entries |
+| `POST /models_queue` | Add a model series to the queue |
+| `PATCH /models_queue/{entry_id}` | Update a queue entry (`exclude_unset` semantics — omitted fields untouched, explicit `null` clears) |
+| `DELETE /models_queue/{entry_id}` | Remove a queue entry |
+| `POST /models_queue/publish` | Save local `models_queue.json` as the DO Spaces master + refresh the HF mirror |
+| `POST /models_queue/restore` | Overwrite the local file from the DO Spaces master |
+| `GET /datasets` | List the seven HF-bucket datasets + their sync state |
+| `POST /datasets/{name}/pull` | Pull one dataset from the bucket if its hash changed |
+| `POST /datasets/{name}/push` | Push one dataset's local file to the bucket (refused for `writable: false`) |
 | `GET /model_store` | List active ephemeral per-series RunPod volumes (RunPod's own list is the source of truth, with DB rows used only to label them) |
 | `POST /generate` | Plan (and, with `dispatch: true`, actually build) one model series |
+| `POST /generate/{run_id}/cancel` | Best-effort cancel of a run's still-in-flight RunPod jobs; only marks the run terminally `cancelled` if every job cancelled |
 | `POST /generate_all` | Same, for every series `/models_missing` currently reports |
 | `POST /report/run/{run_id}` | Runner status callback (legacy direct-HTTP path; still supported, but the outbox is the primary path now) |
 | `GET /report` | Recent runs + summary stats, or one run's detail (`run_id`), or a series' history (`model_series`) |

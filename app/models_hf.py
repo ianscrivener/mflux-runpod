@@ -117,4 +117,12 @@ def update_models_hf(organization: str | None = None, data_path: Path | None = N
 
     push("models_hf")
 
+    # The models_missing snapshot is a diff against this same manifest --
+    # refresh + publish it too, so anything consuming data-hf-sync/models_missing.json
+    # directly from the bucket (rather than calling GET /models_missing, which
+    # is always live-computed) doesn't see a stale diff after a fresh HF scan.
+    from app.models_missing import refresh_models_missing
+
+    refresh_models_missing()
+
     return manifest

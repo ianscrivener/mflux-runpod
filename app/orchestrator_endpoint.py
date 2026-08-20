@@ -10,7 +10,12 @@ container disk -- verified live (2026-08-17) that `volume=NetworkVolume(...)`
 on a Flash Endpoint mounts at /runpod-volume, AND that data written there
 survives a worker scaling to zero (idle_timeout=60s): a run row written at
 08:11 UTC was still readable an hour later, across multiple worker restarts
-and a full redeploy in between.
+and a full redeploy in between. (Renamed reports.sqlite -> mflux-models.sqlite
+2026-08-20, once this same file also started holding the models-catalog
+master tables -- see app/models_catalog.py. If this Endpoint is already
+deployed with real report history on its NetworkVolume, redeploying with
+this new path starts a fresh empty file there rather than finding the old
+one; rename the file on the volume itself first if that history matters.)
 
 Pinned to EU-RO-1 -- NOT the same datacenter as mflux-runner/
 mflux-runner-health (US-IL-1) -- because Flash's CPU/load-balanced
@@ -56,7 +61,7 @@ class GenerateRequest(BaseModel):
     config_stem: str = Field(
         ...,
         description="Model series to generate, matching a configs/{config_stem}.yaml "
-        "file exactly (see GET /models_supported or /models_missing for valid values). "
+        "file exactly (see GET /models_mflux or /models_missing for valid values). "
         "Case-sensitive filename stem, not the Hugging Face model name.",
         examples=["Fibo"],
     )
@@ -141,12 +146,15 @@ orchestrator = Endpoint(
     dependencies=["pyyaml", "httpx", "boto3"],
     volume=NetworkVolume(name="mflux-orchestrator", datacenter=ORCHESTRATOR_DATACENTER, size=10),
     env={
-        "REPORT_DB_PATH": "/runpod-volume/reports.sqlite",
+        "REPORT_DB_PATH": "/runpod-volume/mflux-models.sqlite",
         # Same reasoning as REPORT_DB_PATH: without this, the HF manifest is
         # written to container-local disk and is lost every time the worker
         # scales to zero, so /models_hf returns an empty list until someone
         # re-runs /models_hf/update.
         "MODELS_HF_PATH": "/runpod-volume/models_hf.json",
+        # Same reasoning again -- the upstream source-repo scan (size/hash/
+        # date/text-encoder) would otherwise be lost on every scale-to-zero.
+        "MODELS_SRC_DETAILS_PATH": "/runpod-volume/models_src_details.json",
         # RunPod Secret, injected at runtime -- see dockerFiles/runner_handler.py's
         # identical HF_TOKEN handling for why this isn't a literal value.
         "HF_TOKEN": "{{ RUNPOD_SECRET_HF_TOKEN }}",
@@ -173,18 +181,18 @@ orchestrator = Endpoint(
 )
 
 
-@orchestrator.get("/models_supported")
-async def models_supported() -> dict:
-    from app.models_supported import load_models_supported
+@orchestrator.get("/models_mflux")
+async def models_mflux() -> dict:
+    from app.models_catalog import get_mflux_catalog
 
-    return load_models_supported()
+    return get_mflux_catalog()
 
 
 @orchestrator.get("/models_hf")
 async def models_hf() -> dict:
-    from app.models_hf import load_models_hf
+    from app.models_catalog import get_published_hf_manifest
 
-    return load_models_hf()
+    return get_published_hf_manifest()
 
 
 @orchestrator.post("/models_hf/update")
@@ -196,11 +204,11 @@ async def models_hf_update() -> dict:
 
 @orchestrator.get("/models_missing")
 async def models_missing() -> dict:
+    from app.models_catalog import get_published_hf_manifest
     from app.models_missing import compute_missing, load_configs, load_overrides
-    from app.models_hf import load_models_hf
 
     configs = load_configs()
-    hf_manifest = load_models_hf()
+    hf_manifest = get_published_hf_manifest()
     overrides = load_overrides()
     return compute_missing(configs, hf_manifest, overrides)
 
@@ -214,6 +222,53 @@ async def models_missing_update() -> dict:
 
     try:
         return refresh_models_missing()
+    except HfDatasetConfigError as exc:
+        return {"error": str(exc)}
+
+
+@orchestrator.get("/models_src_details")
+async def models_src_details() -> dict:
+    from app.models_catalog import get_models_src_details
+
+    return get_models_src_details()
+
+
+@orchestrator.get("/models_identity")
+async def models_identity() -> dict:
+    from app.models_catalog import get_model_identities
+
+    return get_model_identities()
+
+
+@orchestrator.get("/text_encoder_aliases")
+async def text_encoder_aliases() -> dict:
+    from app.text_encoder_aliases import load_text_encoder_aliases
+
+    return load_text_encoder_aliases()
+
+
+@orchestrator.get("/models_available")
+async def models_available() -> dict:
+    from app.models_catalog import get_available_models
+
+    return get_available_models()
+
+
+@orchestrator.post("/models_skipped/refresh")
+async def models_skipped_refresh() -> dict:
+    from app.models_catalog import get_available_models, rebuild_if_needed
+
+    rebuild_if_needed(force=True)
+    return get_available_models()
+
+
+@orchestrator.post("/models_src_details/update")
+async def models_src_details_update() -> dict:
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_src_details import refresh_models_src_details
+
+    try:
+        return refresh_models_src_details()
     except HfDatasetConfigError as exc:
         return {"error": str(exc)}
 

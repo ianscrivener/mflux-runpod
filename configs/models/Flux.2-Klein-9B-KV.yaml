@@ -2,6 +2,11 @@ model_object: Flux2Klein
 model_config: flux2_klein_9b_kv
 hf_model_name: black-forest-labs/FLUX.2-klein-9b-kv
 quants:
+  - q3
+  - q4
+  - q5
+  - q6
+  - q8
   - bf16
 collection:
   name: Flux.2 Klein 9B KV

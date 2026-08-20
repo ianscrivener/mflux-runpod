@@ -1,11 +1,14 @@
-"""SQLite persistence for run/quant-build reporting (PRD: Reporting section)."""
+"""SQLite persistence for run/quant-build reporting (PRD: Reporting section),
+and (see app/models_catalog.py) the models-catalog master tables -- both
+live in this same file, named for the broader "mflux models" domain it now
+covers rather than just build reports."""
 
 import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("REPORT_DB_PATH", "data/reports.sqlite"))
+DB_PATH = Path(os.environ.get("REPORT_DB_PATH", "data/mflux-models.sqlite"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (

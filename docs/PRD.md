@@ -105,7 +105,7 @@ params above — no separate endpoint.
 ### Reporting: SQLite on a small persistent volume
 
 The Orchestrator keeps a small persistent RunPod volume (a few GB, separate from the ephemeral
-per-model-series volumes) holding `reports.sqlite` — a durable, queryable run history that
+per-model-series volumes) holding `mflux-models.sqlite` — a durable, queryable run history that
 survives cold starts, independent of the HF manifests.
 
 Two tables:

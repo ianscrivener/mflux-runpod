@@ -12,3 +12,6 @@
     _requires #4
 
 
+----
+### Later
+ - refactor to SSE (push) from API calls (pull)

@@ -4,6 +4,7 @@ hf_model_name: Qwen/Qwen-Image-Edit-2509
 quants:
   - q3
   - q4
+  - q5
   - q6
   - q8
   - bf16

@@ -7,6 +7,7 @@ from app.models_missing import (
     compute_missing,
     expected_repo_ids,
     load_configs,
+    load_models_skipped,
     load_overrides,
     slugify,
 )
@@ -163,13 +164,45 @@ def test_compute_missing_force_exclude_wins_over_force_include(sample_configs):
 
 def test_every_real_config_declares_hf_model_name():
     """Regression guard: task 6 needs hf_model_name to download source weights.
-    Every configs/*.yaml must at least declare the key (Qwen-Image-Layered is the
-    one known exception, deliberately left null pending manual research)."""
+    Every configs/*.yaml must at least declare the key and give it a value
+    (Qwen-Image-Layered used to be a deliberate null-valued exception here,
+    pending manual research -- since filled in with a real repo path, even
+    though that repo isn't in data-hf-sync/models_mflux.json's catalog yet)."""
     configs = load_configs()
     missing_key = [stem for stem, c in configs.items() if "hf_model_name" not in c]
     assert missing_key == [], f"configs missing hf_model_name key: {missing_key}"
 
     null_valued = [stem for stem, c in configs.items() if c["hf_model_name"] is None]
-    assert null_valued == ["Qwen-Image-Layered"], (
-        f"expected only Qwen-Image-Layered to have a null hf_model_name, got: {null_valued}"
+    assert null_valued == [], f"configs with a null hf_model_name: {null_valued}"
+
+
+def test_load_models_skipped_missing_file_degrades_to_all_empty(tmp_path):
+    assert load_models_skipped(tmp_path / "nope.json") == {
+        "families": set(),
+        "sub_families": set(),
+        "models": set(),
+        "quants": {},
+    }
+
+
+def test_load_models_skipped_parses_all_four_rule_types(tmp_path):
+    path = tmp_path / "models_skipped.json"
+    path.write_text(
+        """{
+            "skipped_familys": ["Flux1"],
+            "skipped_model_sub_familys": ["Flux1-Depth"],
+            "skipped_models": ["dev-kontext"],
+            "skipped_quants": {"flux2-klein-9b-kv": ["q3"]}
+        }"""
     )
+
+    result = load_models_skipped(path)
+
+    # families/sub_families are lowercased -- the catalog's own convention
+    # is all-lowercase and this file is hand-edited, so casing drifts.
+    assert result == {
+        "families": {"flux1"},
+        "sub_families": {"flux1-depth"},
+        "models": {"dev-kontext"},
+        "quants": {"flux2-klein-9b-kv": ["q3"]},
+    }

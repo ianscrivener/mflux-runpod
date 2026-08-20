@@ -55,7 +55,7 @@ def _local_path(entry: dict) -> Path:
     """Resolve entry['local_path'] against the repo root (CONFIG_PATH's
     grandparent), not the process's current working directory -- matches
     the file-relative-path convention every other app/*.py module already
-    uses (models_hf.py, models_supported.py, queue_store.py, runpod_skus.py),
+    uses (models_hf.py, models_mflux.py, queue_store.py, runpod_skus.py),
     so pull()/push() find the same file regardless of what cwd the
     Orchestrator happens to be launched from. Absolute paths pass through
     unchanged."""

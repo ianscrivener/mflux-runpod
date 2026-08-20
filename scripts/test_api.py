@@ -23,17 +23,13 @@ import httpx
 from resolve_orchestrator_url import resolve_base_url
 
 
-def _resolve_base_url(api_key: str) -> str:
-    explicit = os.environ.get("API_BASE_URL")
-    return explicit.rstrip("/") if explicit else resolve_base_url(api_key)
-
-
 def main() -> None:
     api_key = os.environ.get("RUNPOD_API_KEY")
-    if not api_key:
+    explicit_local = os.environ.get("API_BASE_URL")
+    if not api_key and not explicit_local:
         raise SystemExit("RUNPOD_API_KEY not set")
 
-    base_url = _resolve_base_url(api_key)
+    base_url = explicit_local.rstrip("/") if explicit_local else resolve_base_url(api_key)
     print(f"Target: {base_url}\n")
 
     # RunPod authenticates LB endpoints at the edge -- every path 401s

@@ -1,9 +1,10 @@
 model_object: QwenImage
 model_config: qwen_image_layered
-hf_model_name: null  # no matching entry in data-hf-sync/models_mflux.json — needs manual research
+hf_model_name: Qwen/Qwen-Image-Layered
 quants:
   - q3
   - q4
+  - q5
   - q6
   - q8
   - bf16

@@ -22,13 +22,14 @@ def _bucket_file(path, xet_hash, size=100):
     return SimpleNamespace(path=path, xet_hash=xet_hash, size=size, mtime=None, uploaded_at=None)
 
 
-def test_load_dataset_config_has_seven_datasets():
+def test_load_dataset_config_has_eight_datasets():
     config = load_dataset_config()
     assert config["bucket_id"] == "mflux-community/ci"
     assert set(config["datasets"]) == {
         "models_mflux",
         "models_hf",
         "models_missing",
+        "models_src_details",
         "runpod_gpu_skus",
         "logs_devops",
         "logs_conversions",

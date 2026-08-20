@@ -26,6 +26,11 @@ datasets:
     local_path: data-hf-sync/models_missing.json
     writable: true
 
+  models_src_details:
+    path_in_repo: models_src_details.json
+    local_path: data-hf-sync/models_src_details.json
+    writable: true
+
   runpod_gpu_skus:
     path_in_repo: runpod_gpu_skus.json
     local_path: data-hf-sync/runpod_gpu_skus.json

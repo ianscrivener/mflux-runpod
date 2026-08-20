@@ -4,7 +4,7 @@ A model series is "supported" only once it has a configs/models/*.yaml file
 (that's what defines its buildable quants list and Runner build metadata).
 Series present in data-hf-sync/models_mflux.json but without a config are not
 yet buildable and are excluded here, though they still show up under
-/models_supported.
+/models_mflux.
 
 A series is missing a quant if mflux-community/{slug}-mflux-{quant} isn't in the
 current models_hf.json manifest. A series is "complete" only when every quant in
@@ -23,11 +23,20 @@ from pathlib import Path
 import yaml
 
 MODELS_MISSING_PATH = Path(__file__).resolve().parent.parent / "data-hf-sync" / "models_missing.json"
+MODELS_SKIPPED_PATH = Path(__file__).resolve().parent.parent / "data-hf-sync" / "models_skipped.json"
 
 CONFIGS_ROOT = Path(__file__).resolve().parent.parent / "configs"
 CONFIGS_DIR = CONFIGS_ROOT / "models"
 OVERRIDES_PATH = CONFIGS_ROOT / "overrides.yaml"
 HF_ORG = "mflux-community"
+
+# The hardcoded default quant set every models_mflux.json catalog entry is
+# assumed to support, replacing configs/models/*.yaml's per-model `quants`
+# field as the source of truth for app.models_catalog.get_available_models().
+# compute_missing() below is UNCHANGED and still reads each config's own
+# `quants` list -- it backs real dispatch (generate_one/generate_all), which
+# still requires a configs/models/*.yaml file to exist regardless of this set.
+DEFAULT_QUANTS = ["q3", "q4", "q5", "q6", "q8", "bf16"]
 
 
 def slugify(name: str) -> str:
@@ -55,6 +64,52 @@ def load_overrides(overrides_path: Path = OVERRIDES_PATH) -> dict:
     return {
         "force_include": data.get("force_include") or [],
         "force_exclude": data.get("force_exclude") or [],
+    }
+
+
+def load_models_skipped(path: Path = MODELS_SKIPPED_PATH) -> dict:
+    """Parse data-hf-sync/models_skipped.json -- four ways to exclude a
+    models_mflux.json catalog entry (or one of its quants) from
+    app.models_catalog.get_available_models()'s computed set:
+
+        {
+          "skipped_familys": ["Flux1"],             # whole model_family, case-insensitive
+          "skipped_model_sub_familys": ["flux1-depth"],  # whole model_sub_family, case-insensitive
+          "skipped_models": ["dev-kontext"],         # one catalog slug OR config stem entirely
+          "skipped_quants": {"flux2-klein-9b-kv": ["q3"]}  # specific quants of one slug
+        }
+
+    skipped_models entries may name either a models_mflux.json catalog slug
+    (the normal case) or a configs/models/*.yaml stem -- the latter is the
+    only way to skip a config that has no catalog match at all (e.g.
+    "Qwen-Image-Layered", which isn't in models_mflux.json yet, so it has no
+    slug to skip by).
+
+    Returns {"families": set, "sub_families": set, "models": set, "quants": dict}
+    (families/sub_families/models all lowercased for comparison -- catalog
+    slugs are already lowercase by convention, but config stems aren't
+    (e.g. "Qwen-Image-Layered"), and this file is hand-edited, so casing
+    drifts either way; app.models_catalog.compute_available_models lowercases
+    the slug/stem it checks against this set to match).
+    Hand-edited directly on disk by design -- deliberately NOT registered in
+    configs/hf_datasets.yaml, so app.main's hf_sync loop never pulls over an
+    in-progress local edit before it's ever pushed anywhere. Missing file
+    (nothing skipped yet) degrades to all-empty."""
+    empty = {"families": set(), "sub_families": set(), "models": set(), "quants": {}}
+    if not path.exists():
+        return empty
+    data = json.loads(path.read_text()) or {}
+    quants = data.get("skipped_quants", {})
+    if not isinstance(quants, dict):
+        # Hand-editing mistake: someone wrote "skipped_quants": [] (an empty
+        # list reads naturally as "nothing here") instead of {} -- coerce
+        # rather than crash every /models_available call over it.
+        quants = {}
+    return {
+        "families": {f.lower() for f in data.get("skipped_familys", [])},
+        "sub_families": {f.lower() for f in data.get("skipped_model_sub_familys", [])},
+        "models": {m.lower() for m in data.get("skipped_models", [])},
+        "quants": quants,
     }
 
 

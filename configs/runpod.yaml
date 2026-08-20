@@ -9,12 +9,12 @@ orchestrator:
     min: 0
     max: 1
   timeout_seconds: 300
-  network_volume: true        # small persistent volume for reports.sqlite (/report history)
+  network_volume: true        # small persistent volume for mflux-models.sqlite (/report history + models catalog)
   volume_size_gb: 5
   env:
     HF_TOKEN: ${HF_TOKEN}
     HF_ORG: mflux-community
-    REPORT_DB_PATH: /workspace/reports.sqlite
+    REPORT_DB_PATH: /workspace/mflux-models.sqlite
 
 runner:
   name: mflux-runner

@@ -15,7 +15,7 @@ wheels/
 HF_CACHE
 
 # Generated at runtime, not source
-data/reports.sqlite
+data/mflux-models.sqlite
 data/.hf_sync_state.json
 # The seven HF-bucket-synced datasets (see hf_datasets.yaml) -- all
 # regenerable via `pull()`/the app's own refresh triggers, no need for git
@@ -56,3 +56,11 @@ z_*.*
 scripts/
 zz_generate.sh
 zz_scratch.txt
+
+# Admin web app (webapp/, Svelte + Vite) -- node_modules and the built
+# static bundle are both regenerable (`cd webapp && npm install && npm run
+# build`), not source. Built output lands in app/static/, served by
+# app/main.py's StaticFiles mount.
+webapp/node_modules/
+app/static/
+.DS_Store

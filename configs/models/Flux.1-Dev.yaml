@@ -4,6 +4,7 @@ hf_model_name: black-forest-labs/FLUX.1-dev
 quants:
   - q3
   - q4
+  - q5
   - q6
   - q8
   - bf16

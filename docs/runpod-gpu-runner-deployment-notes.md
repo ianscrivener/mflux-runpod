@@ -174,7 +174,7 @@ worker that's already mid-pull/init with no job (which is exactly the
 ## 7. Orchestrator vs. GPU Runner run in different DCs, and that's fine
 
 `mflux-orchestrator` (CPU, load-balancer endpoint) is pinned to `EU-RO-1` —
-its own network volume (`reports.sqlite`, `models_hf.json`) lives there.
+its own network volume (`mflux-models.sqlite`, `models_hf.json`) lives there.
 That's a **separate resource pool** (CPU) from the GPU Runner (`ADA_24`)
 and has no bearing on GPU placement — don't read "orchestrator is in RO" as
 a signal about where GPU capacity is. If/when a real per-series volume is

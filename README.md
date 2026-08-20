@@ -23,7 +23,7 @@ Two services:
 app/                  Orchestrator FastAPI app
   main.py             API routes
   db.py               SQLite schema (runs, quant_builds) for /report
-  models_supported.py /models_supported — reads data-hf-sync/models_mflux.json
+  models_mflux.py     /models_mflux — reads data-hf-sync/models_mflux.json
   models_hf.py         /models_hf, /models_hf/update — scans the mflux-community HF org
   models_missing.py    /models_missing — diffs configs/models/*.yaml against models_hf.json
 
@@ -63,7 +63,7 @@ uv run uvicorn app.main:app --reload
 Then visit `http://127.0.0.1:8000/docs` for the interactive Swagger UI, or:
 
 ```bash
-curl http://127.0.0.1:8000/models_supported
+curl http://127.0.0.1:8000/models_mflux
 curl http://127.0.0.1:8000/models_hf
 curl -X POST http://127.0.0.1:8000/models_hf/update
 curl http://127.0.0.1:8000/models_missing
@@ -79,7 +79,7 @@ uv run pytest -v
 
 ## Status
 
-Core structure, SQLite reporting schema, and the read-only `/models_supported`,
+Core structure, SQLite reporting schema, and the read-only `/models_mflux`,
 `/models_hf(/update)`, and `/models_missing` endpoints are implemented and tested. The GPU
 Runner, ephemeral per-model-series volumes, `/generate`, `/generate_all`, and `/report` are not
 yet built — see [z_ToDo.txt](z_ToDo.txt) for the remaining steps.

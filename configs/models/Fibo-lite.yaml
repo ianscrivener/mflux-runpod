@@ -2,7 +2,9 @@ model_object: FIBO
 model_config: fibo_lite
 hf_model_name: briaai/Fibo-lite
 quants:
+  - q3
   - q4
+  - q5
   - q6
   - q8
   - bf16

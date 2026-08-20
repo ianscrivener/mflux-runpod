@@ -10,9 +10,28 @@ root := justfile_directory()
 test:
     .venv/bin/pytest tests/ -q
 
-# Run the Orchestrator locally in the foreground (dev)
+# Validate every JSON (and JSON Lines) file under data/ and data-hf-sync/ --
+# catches a syntax mistake in a hand-edited file (e.g. data-hf-sync/
+# models_skipped.json) before it 500s the app instead of after.
+json:
+    .venv/bin/python3 scripts/validate_json.py
+
+# Run the Orchestrator locally in the foreground (dev). Serves the admin
+# web app too, if app/static/ has been built (see webapp-build) -- visit
+# http://127.0.0.1:8000/
 serve:
     uv run uvicorn app.main:app --reload
+
+# Build the admin web app (webapp/, Svelte + Vite) to app/static/, so
+# `just serve`/svc-add serve it at http://127.0.0.1:8000/. Re-run after
+# any webapp/src change.
+webapp-build:
+    cd webapp && npm install && npm run build
+
+# Run the web app's own dev server with hot reload (http://127.0.0.1:5173),
+# proxying API calls to :8000 -- run `just serve` in another terminal first.
+webapp-dev:
+    cd webapp && npm install && npm run dev
 
 # Install + start the Orchestrator as a launchd service (runs at login, restarts on crash,
 # binds 127.0.0.1:8000 only). Logs to logs/orchestrator.{out,err}.log in this repo.
@@ -75,9 +94,31 @@ svc-del:
     rm -f "{{ plist }}"
     echo "Removed {{ label }}"
 
-# Hit the live Orchestrator's endpoints and print a one-line summary each
+# Hit the local Orchestrator's endpoints and print a one-line summary each.
+# Starts it in the background first if it's not already running (on whatever
+# port it's already up on if so, else 8000); only stops it again afterward
+# if this recipe was the one that started it.
 test-api:
-    .venv/bin/python3 scripts/test_api.py
+    #!/usr/bin/env bash
+    set -uo pipefail  # no -e: cleanup below must still run if the check fails
+    started_by_us=false
+    if ! curl -sf -o /dev/null -m 2 http://127.0.0.1:8000/health 2>/dev/null; then
+        echo "Local Orchestrator not running -- starting it..." >&2
+        mkdir -p logs
+        uv run uvicorn app.main:app --port 8000 > logs/test-api-server.log 2>&1 &
+        server_pid=$!
+        started_by_us=true
+        for _ in $(seq 1 30); do
+            curl -sf -o /dev/null -m 1 http://127.0.0.1:8000/health 2>/dev/null && break
+            sleep 0.5
+        done
+    fi
+    API_BASE_URL=http://127.0.0.1:8000 .venv/bin/python3 scripts/test_api.py
+    exit_code=$?
+    if [ "$started_by_us" = true ]; then
+        kill "$server_pid" 2>/dev/null || true
+    fi
+    exit $exit_code
 
 # Fetch one Orchestrator endpoint as raw JSON. Resolves the current
 # mflux-orchestrator URL fresh each call (via scripts/resolve_orchestrator_url.py
@@ -93,8 +134,8 @@ _fetch path:
 # GET /health, raw JSON
 health: (_fetch "/health")
 
-# GET /models_supported, raw JSON
-models_supported: (_fetch "/models_supported")
+# GET /models_mflux, raw JSON
+models_mflux: (_fetch "/models_mflux")
 
 # GET /models_hf, raw JSON
 models_hf: (_fetch "/models_hf")

@@ -2,16 +2,19 @@
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.db import init_db
 from app.generate import UnknownModelError, dry_run_trigger, generate_all, generate_one
-from app.models_hf import load_models_hf, update_models_hf
+from app.models_hf import update_models_hf
 from app.models_missing import compute_missing, load_configs, load_overrides
-from app.models_supported import load_models_supported
 from app.report import (
     add_quant_build,
     clear_runs,
@@ -26,6 +29,9 @@ from app.report import (
 logger = logging.getLogger(__name__)
 
 OUTBOX_POLL_INTERVAL_S = 30
+MODELS_HF_REFRESH_INTERVAL_S = 300  # 5 minutes
+HF_SYNC_INTERVAL_S = 300  # 5 minutes
+MODELS_SRC_DETAILS_REFRESH_INTERVAL_S = 6 * 60 * 60  # 6 hours -- see loop docstring
 
 
 async def _outbox_poll_loop() -> None:
@@ -50,25 +56,140 @@ async def _outbox_poll_loop() -> None:
         await asyncio.sleep(OUTBOX_POLL_INTERVAL_S)
 
 
+def _stale(path: Path, max_age_s: float) -> bool:
+    """True if `path` is missing or wasn't written within the last max_age_s
+    seconds -- used to skip a refresh that's already fresh (e.g. someone hit
+    the manual /models_hf/update button 30s ago)."""
+    if not path.exists():
+        return True
+    return (time.time() - path.stat().st_mtime) >= max_age_s
+
+
+async def _models_hf_refresh_loop() -> None:
+    """Background task: rescan the mflux-community HF org and refresh
+    data-hf-sync/models_hf.json at startup and every
+    MODELS_HF_REFRESH_INTERVAL_S seconds after, skipping the scan if the
+    manifest is already fresher than that -- keeps /models_hf and
+    /models_missing current without hammering the HF API on every restart."""
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_catalog import rebuild_if_needed
+    from app.models_hf import DATA_PATH
+
+    while True:
+        try:
+            if _stale(DATA_PATH, MODELS_HF_REFRESH_INTERVAL_S):
+                result = update_models_hf()
+                logger.info("models_hf refresh: %d models", len(result.get("hf_models", [])))
+            rebuild_if_needed()
+        except HfDatasetConfigError:
+            logger.warning("HF_TOKEN not configured; models_hf background refresh disabled")
+            return
+        except Exception:  # noqa: BLE001 - one bad scan shouldn't kill the loop
+            logger.exception("models_hf refresh failed")
+        await asyncio.sleep(MODELS_HF_REFRESH_INTERVAL_S)
+
+
+async def _models_src_details_refresh_loop() -> None:
+    """Background task: rescan every model's upstream source repo (size,
+    commit hash, last-modified date, text encoder) and refresh
+    data-hf-sync/models_src_details.json at startup and every
+    MODELS_SRC_DETAILS_REFRESH_INTERVAL_S seconds after, skipping the scan if
+    the manifest is already fresher than that. A much longer interval than
+    the other loops -- unlike models_hf (one list call), this makes one HF
+    API call (+ an optional model_index.json download) per distinct source
+    repo, and source repos change on the order of days/weeks, not minutes."""
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_catalog import rebuild_if_needed
+    from app.models_src_details import DATA_PATH, refresh_models_src_details
+
+    while True:
+        try:
+            if _stale(DATA_PATH, MODELS_SRC_DETAILS_REFRESH_INTERVAL_S):
+                result = refresh_models_src_details()
+                logger.info("models_src_details refresh: %d source repos", len(result))
+            rebuild_if_needed()
+        except HfDatasetConfigError:
+            logger.warning("HF_TOKEN not configured; models_src_details background refresh disabled")
+            return
+        except Exception:  # noqa: BLE001 - one bad scan shouldn't kill the loop
+            logger.exception("models_src_details refresh failed")
+        await asyncio.sleep(MODELS_SRC_DETAILS_REFRESH_INTERVAL_S)
+
+
+async def _hf_sync_loop() -> None:
+    """Background task: pull every dataset configured in
+    configs/hf_datasets.yaml (models_mflux, models_missing, models_queue,
+    etc.) from the HF bucket at startup and every HF_SYNC_INTERVAL_S seconds
+    after, so this process's data-hf-sync/ mirror stays current with
+    anything another writer (or the upstream mflux CI pipeline, for
+    models_mflux) published. pull() is metadata-only when nothing changed,
+    so this is cheap even at a 5-minute cadence."""
+    import os
+
+    from app.hf_datasets import HfDatasetConfigError, load_dataset_config, pull
+    from app.models_catalog import rebuild_if_needed
+
+    if not os.environ.get("HF_TOKEN"):
+        logger.warning("HF_TOKEN not configured; HF dataset sync disabled")
+        return
+
+    dataset_names = list(load_dataset_config().get("datasets", {}))
+
+    while True:
+        for name in dataset_names:
+            try:
+                pull(name)
+            except HfDatasetConfigError as exc:
+                # Per-dataset, recoverable (e.g. a dataset that's never been
+                # pushed yet, so it doesn't exist in the bucket) -- log and
+                # move on to the next dataset rather than disabling the
+                # whole loop, which HF_TOKEN's absence (checked once above)
+                # would warrant instead.
+                logger.warning("hf sync: pull(%r) skipped: %s", name, exc)
+            except Exception:  # noqa: BLE001 - one bad pull shouldn't kill the loop
+                logger.exception("hf sync: pull(%r) failed", name)
+        try:
+            rebuild_if_needed()
+        except Exception:  # noqa: BLE001 - a failed rebuild here just means the next GET retries it
+            logger.exception("catalog rebuild after hf sync failed")
+        await asyncio.sleep(HF_SYNC_INTERVAL_S)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    from app.models_catalog import rebuild_if_needed
+
+    try:
+        rebuild_if_needed()
+    except Exception:  # noqa: BLE001 - a failed rebuild here just means the first GET retries it
+        logger.exception("catalog rebuild at startup failed")
     poll_task = asyncio.create_task(_outbox_poll_loop())
+    models_hf_task = asyncio.create_task(_models_hf_refresh_loop())
+    models_src_details_task = asyncio.create_task(_models_src_details_refresh_loop())
+    hf_sync_task = asyncio.create_task(_hf_sync_loop())
     yield
     poll_task.cancel()
+    models_hf_task.cancel()
+    models_src_details_task.cancel()
+    hf_sync_task.cancel()
 
 
 app = FastAPI(title="mflux-runpod orchestrator", lifespan=lifespan)
 
 
-@app.get("/models_supported")
-def models_supported():
-    return load_models_supported()
+@app.get("/models_mflux")
+def models_mflux():
+    from app.models_catalog import get_mflux_catalog
+
+    return get_mflux_catalog()
 
 
 @app.get("/models_hf")
 def models_hf():
-    return load_models_hf()
+    from app.models_catalog import get_published_hf_manifest
+
+    return get_published_hf_manifest()
 
 
 @app.post("/models_hf/update")
@@ -78,8 +199,10 @@ def models_hf_update():
 
 @app.get("/models_missing")
 def models_missing():
+    from app.models_catalog import get_published_hf_manifest
+
     configs = load_configs()
-    hf_manifest = load_models_hf()
+    hf_manifest = get_published_hf_manifest()
     overrides = load_overrides()
     return compute_missing(configs, hf_manifest, overrides)
 
@@ -94,6 +217,68 @@ def models_missing_update():
 
     try:
         return refresh_models_missing()
+    except HfDatasetConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/models_src_details", summary="Per-model upstream source repo size/hash/date/text-encoder")
+def models_src_details():
+    from app.models_catalog import get_models_src_details
+
+    return get_models_src_details()
+
+
+@app.get(
+    "/models_identity",
+    summary="Authoritative stem -> catalog slug/family/type/quants resolution",
+)
+def models_identity():
+    from app.models_catalog import get_model_identities
+
+    return get_model_identities()
+
+
+@app.get(
+    "/text_encoder_aliases",
+    summary="Human-friendly aliases for raw text-encoder class names (data/text-encoder-alias.csv)",
+)
+def text_encoder_aliases():
+    from app.text_encoder_aliases import load_text_encoder_aliases
+
+    return load_text_encoder_aliases()
+
+
+@app.get(
+    "/models_available",
+    summary="models_mflux.json x default quants - models_skipped.json (informational, not dispatch)",
+)
+def models_available():
+    from app.models_catalog import get_available_models
+
+    return get_available_models()
+
+
+@app.post(
+    "/models_skipped/refresh",
+    summary="Force-rebuild the catalog mirror and re-read data-hf-sync/models_skipped.json",
+)
+def models_skipped_refresh():
+    from app.models_catalog import get_available_models, rebuild_if_needed
+
+    rebuild_if_needed(force=True)
+    return get_available_models()
+
+
+@app.post(
+    "/models_src_details/update",
+    summary="Rescan every model's upstream source repo and publish the details",
+)
+def models_src_details_update():
+    from app.hf_datasets import HfDatasetConfigError
+    from app.models_src_details import refresh_models_src_details
+
+    try:
+        return refresh_models_src_details()
     except HfDatasetConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -240,7 +425,7 @@ class GenerateRequest(BaseModel):
     config_stem: str = Field(
         ...,
         description="Model series to generate, matching a configs/{config_stem}.yaml "
-        "file exactly (see GET /models_supported or /models_missing for valid values). "
+        "file exactly (see GET /models_mflux or /models_missing for valid values). "
         "Case-sensitive filename stem, not the Hugging Face model name.",
         examples=["Fibo"],
     )
@@ -465,3 +650,12 @@ def outbox_poll():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Admin web app (webapp/, Svelte + Vite) -- built to app/static/ by
+# `npm run build` (see webapp/vite.config.js). Mounted last, and only if
+# the build actually exists, so every API route above still wins its exact
+# path match and a not-yet-built checkout doesn't crash the app on import.
+WEBAPP_DIST = Path(__file__).resolve().parent / "static"
+if WEBAPP_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=WEBAPP_DIST, html=True), name="webapp")

@@ -1,0 +1,262 @@
+[
+    {
+        "name": "cpu-basic",
+        "pretty name": "CPU Basic",
+        "cpu": "2 vCPU",
+        "ram": "16 GB",
+        "storage": "50 GB",
+        "accelerator": "",
+        "cost/min": "$0.0002",
+        "cost/hour": "$0.01"
+    },
+    {
+        "name": "cpu-upgrade",
+        "pretty name": "CPU Upgrade",
+        "cpu": "8 vCPU",
+        "ram": "32 GB",
+        "storage": "50 GB",
+        "accelerator": "",
+        "cost/min": "$0.0005",
+        "cost/hour": "$0.03"
+    },
+    {
+        "name": "cpu-performance",
+        "pretty name": "CPU Performance",
+        "cpu": "32 vCPU",
+        "ram": "256 GB",
+        "storage": "1024 GB",
+        "accelerator": "",
+        "cost/min": "$0.0317",
+        "cost/hour": "$1.90"
+    },
+    {
+        "name": "cpu-xl",
+        "pretty name": "CPU XL",
+        "cpu": "16 vCPU",
+        "ram": "124 GB",
+        "storage": "1000 GB",
+        "accelerator": "",
+        "cost/min": "$0.0167",
+        "cost/hour": "$1.00"
+    },
+    {
+        "name": "t4-small",
+        "pretty name": "Nvidia T4 - small",
+        "cpu": "4 vCPU",
+        "ram": "15 GB",
+        "storage": "50 GB",
+        "accelerator": "1x T4 (16 GB)",
+        "cost/min": "$0.0067",
+        "cost/hour": "$0.40"
+    },
+    {
+        "name": "t4-medium",
+        "pretty name": "Nvidia T4 - medium",
+        "cpu": "8 vCPU",
+        "ram": "30 GB",
+        "storage": "100 GB",
+        "accelerator": "1x T4 (16 GB)",
+        "cost/min": "$0.0100",
+        "cost/hour": "$0.60"
+    },
+    {
+        "name": "a10g-small",
+        "pretty name": "Nvidia A10G - small",
+        "cpu": "4 vCPU",
+        "ram": "15 GB",
+        "storage": "110 GB",
+        "accelerator": "1x A10G (24 GB)",
+        "cost/min": "$0.0167",
+        "cost/hour": "$1.00"
+    },
+    {
+        "name": "a10g-large",
+        "pretty name": "Nvidia A10G - large",
+        "cpu": "12 vCPU",
+        "ram": "46 GB",
+        "storage": "200 GB",
+        "accelerator": "1x A10G (24 GB)",
+        "cost/min": "$0.0250",
+        "cost/hour": "$1.50"
+    },
+    {
+        "name": "a10g-largex2",
+        "pretty name": "2x Nvidia A10G - large",
+        "cpu": "24 vCPU",
+        "ram": "92 GB",
+        "storage": "1000 GB",
+        "accelerator": "2x A10G (48 GB)",
+        "cost/min": "$0.0500",
+        "cost/hour": "$3.00"
+    },
+    {
+        "name": "a10g-largex4",
+        "pretty name": "4x Nvidia A10G - large",
+        "cpu": "48 vCPU",
+        "ram": "184 GB",
+        "storage": "2000 GB",
+        "accelerator": "4x A10G (96 GB)",
+        "cost/min": "$0.0833",
+        "cost/hour": "$5.00"
+    },
+    {
+        "name": "a100-large",
+        "pretty name": "Nvidia A100 - large",
+        "cpu": "12 vCPU",
+        "ram": "142 GB",
+        "storage": "1000 GB",
+        "accelerator": "1x A100 (80 GB)",
+        "cost/min": "$0.0417",
+        "cost/hour": "$2.50"
+    },
+    {
+        "name": "a100x4",
+        "pretty name": "4x Nvidia A100",
+        "cpu": "48 vCPU",
+        "ram": "568 GB",
+        "storage": "4000 GB",
+        "accelerator": "4x A100 (320 GB)",
+        "cost/min": "$0.1667",
+        "cost/hour": "$10.00"
+    },
+    {
+        "name": "a100x8",
+        "pretty name": "8x Nvidia A100",
+        "cpu": "96 vCPU",
+        "ram": "1136 GB",
+        "storage": "8000 GB",
+        "accelerator": "8x A100 (640 GB)",
+        "cost/min": "$0.3333",
+        "cost/hour": "$20.00"
+    },
+    {
+        "name": "h200",
+        "pretty name": "Nvidia H200",
+        "cpu": "23 vCPU",
+        "ram": "256 GB",
+        "storage": "3000 GB",
+        "accelerator": "1x H200 (141 GB)",
+        "cost/min": "$0.0833",
+        "cost/hour": "$5.00"
+    },
+    {
+        "name": "h200x2",
+        "pretty name": "Nvidia H200",
+        "cpu": "46 vCPU",
+        "ram": "512 GB",
+        "storage": "6000 GB",
+        "accelerator": "2x H200 (282 GB)",
+        "cost/min": "$0.1667",
+        "cost/hour": "$10.00"
+    },
+    {
+        "name": "h200x4",
+        "pretty name": "Nvidia H200",
+        "cpu": "92 vCPU",
+        "ram": "1024 GB",
+        "storage": "12000 GB",
+        "accelerator": "4x H200 (564 GB)",
+        "cost/min": "$0.3333",
+        "cost/hour": "$20.00"
+    },
+    {
+        "name": "h200x8",
+        "pretty name": "Nvidia H200",
+        "cpu": "184 vCPU",
+        "ram": "2048 GB",
+        "storage": "24000 GB",
+        "accelerator": "8x H200 (1128 GB)",
+        "cost/min": "$0.6667",
+        "cost/hour": "$40.00"
+    },
+    {
+        "name": "rtx-pro-6000",
+        "pretty name": "Nvidia RTX PRO 6000",
+        "cpu": "23 vCPU",
+        "ram": "256 GB",
+        "storage": "475 GB",
+        "accelerator": "1x RTX PRO 6000 (96 GB)",
+        "cost/min": "$0.0458",
+        "cost/hour": "$2.75"
+    },
+    {
+        "name": "rtx-pro-6000x2",
+        "pretty name": "Nvidia RTX PRO 6000",
+        "cpu": "46 vCPU",
+        "ram": "512 GB",
+        "storage": "950 GB",
+        "accelerator": "2x RTX PRO 6000 (192 GB)",
+        "cost/min": "$0.0917",
+        "cost/hour": "$5.50"
+    },
+    {
+        "name": "rtx-pro-6000x4",
+        "pretty name": "Nvidia RTX PRO 6000",
+        "cpu": "92 vCPU",
+        "ram": "1024 GB",
+        "storage": "1900 GB",
+        "accelerator": "4x RTX PRO 6000 (384 GB)",
+        "cost/min": "$0.1833",
+        "cost/hour": "$11.00"
+    },
+    {
+        "name": "rtx-pro-6000x8",
+        "pretty name": "Nvidia RTX PRO 6000",
+        "cpu": "184 vCPU",
+        "ram": "2048 GB",
+        "storage": "3800 GB",
+        "accelerator": "8x RTX PRO 6000 (768 GB)",
+        "cost/min": "$0.3667",
+        "cost/hour": "$22.00"
+    },
+    {
+        "name": "l4x1",
+        "pretty name": "1x Nvidia L4",
+        "cpu": "8 vCPU",
+        "ram": "30 GB",
+        "storage": "400 GB",
+        "accelerator": "1x L4 (24 GB)",
+        "cost/min": "$0.0133",
+        "cost/hour": "$0.80"
+    },
+    {
+        "name": "l4x4",
+        "pretty name": "4x Nvidia L4",
+        "cpu": "48 vCPU",
+        "ram": "186 GB",
+        "storage": "3200 GB",
+        "accelerator": "4x L4 (96 GB)",
+        "cost/min": "$0.0633",
+        "cost/hour": "$3.80"
+    },
+    {
+        "name": "l40sx1",
+        "pretty name": "1x Nvidia L40S",
+        "cpu": "8 vCPU",
+        "ram": "62 GB",
+        "storage": "380 GB",
+        "accelerator": "1x L40S (48 GB)",
+        "cost/min": "$0.0300",
+        "cost/hour": "$1.80"
+    },
+    {
+        "name": "l40sx4",
+        "pretty name": "4x Nvidia L40S",
+        "cpu": "48 vCPU",
+        "ram": "382 GB",
+        "storage": "3200 GB",
+        "accelerator": "4x L40S (192 GB)",
+        "cost/min": "$0.1383",
+        "cost/hour": "$8.30"
+    },
+    {
+        "name": "l40sx8",
+        "pretty name": "8x Nvidia L40S",
+        "cpu": "192 vCPU",
+        "ram": "1534 GB",
+        "storage": "6500 GB",
+        "accelerator": "8x L40S (384 GB)",
+        "cost/min": "$0.3917",
+        "cost/hour": "$23.50"
+    }
+]
