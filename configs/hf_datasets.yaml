@@ -50,3 +50,12 @@ datasets:
     path_in_repo: models_queue.json
     local_path: data-hf-sync/models_queue.json
     writable: true
+
+  # Hand-edited directly on disk (see app/models_missing.py::load_models_skipped)
+  # -- writable so it can be Pushed here after a local edit, same workflow as
+  # models_queue. No refresh/generate action: there's nothing to compute, it's
+  # pure human input.
+  models_skipped:
+    path_in_repo: models_skipped.json
+    local_path: data-hf-sync/models_skipped.json
+    writable: true

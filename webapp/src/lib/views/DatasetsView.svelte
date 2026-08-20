@@ -7,6 +7,18 @@
   let busy = $state({});
   let msg = $state({});
 
+  // Only these four datasets are actually computed/scraped by this app and
+  // have a real "regenerate" endpoint -- everything else in configs/
+  // hf_datasets.yaml is either pull-only (models_mflux, owned by upstream
+  // mflux CI), human-authored with no generate step (models_queue,
+  // models_skipped), or an append-only log (logs_devops, logs_conversions).
+  const REFRESH_ACTIONS = {
+    models_hf: api.modelsHfUpdate,
+    models_missing: api.modelsMissingUpdate,
+    models_src_details: api.modelsSrcDetailsUpdate,
+    runpod_gpu_skus: api.runpodGpuSkusUpdate,
+  };
+
   async function load() {
     try {
       const res = await api.datasetsList();
@@ -48,6 +60,19 @@
       busy = { ...busy, [name]: false };
     }
   }
+
+  async function refresh(name) {
+    busy = { ...busy, [name]: true };
+    try {
+      await REFRESH_ACTIONS[name]();
+      msg = { ...msg, [name]: "refreshed" };
+      await load();
+    } catch (e) {
+      msg = { ...msg, [name]: e.message };
+    } finally {
+      busy = { ...busy, [name]: false };
+    }
+  }
 </script>
 
 <h2 style="margin-bottom:12px">Datasets</h2>
@@ -60,7 +85,7 @@
   <div class="card scroll-x">
     <table>
       <thead>
-        <tr><th>Name</th><th>Path in repo</th><th>Local</th><th>Writable</th><th>Last known</th><th></th></tr>
+        <tr><th>Name</th><th>Path in repo</th><th>Local</th><th>Writable</th><th>Last known</th><th>Refresh</th><th></th></tr>
       </thead>
       <tbody>
         {#each datasets as d (d.name)}
@@ -80,6 +105,18 @@
               {d.last_known ? (d.last_known.xet_hash?.slice(0, 10) ?? JSON.stringify(d.last_known)) : "—"}
             </td>
             <td>
+              {#if REFRESH_ACTIONS[d.name]}
+                <button
+                  type="button"
+                  class="refresh-btn"
+                  disabled={busy[d.name]}
+                  onclick={() => refresh(d.name)}
+                  title="Regenerate {d.name} from its source and publish it"
+                  aria-label="Refresh {d.name}"
+                >🔄</button>
+              {/if}
+            </td>
+            <td>
               <button disabled={busy[d.name]} onclick={() => pull(d.name)}>Pull</button>
               <button disabled={busy[d.name] || !d.writable} onclick={() => push(d.name)}>Push</button>
               {#if msg[d.name]}<span class="muted" style="font-size:11px">{msg[d.name]}</span>{/if}
@@ -90,3 +127,23 @@
     </table>
   </div>
 {/if}
+
+<style>
+  .refresh-btn {
+    all: unset;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+
+  .refresh-btn:disabled {
+    cursor: wait;
+    opacity: 0.5;
+  }
+
+  .refresh-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+</style>

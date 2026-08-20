@@ -22,8 +22,6 @@
   let active = $state("summary");
   let online = $state(true);
   let adminOpen = $state(false);
-  let skippedRefreshing = $state(false);
-  let skippedRefreshMsg = $state("");
 
   const activeTab = $derived(TABS.find((t) => t.id === active));
 
@@ -42,25 +40,6 @@
   function selectAdminTab(id) {
     active = id;
     adminOpen = false;
-  }
-
-  // data-hf-sync/models_skipped.json is hand-edited on disk (not synced to
-  // the HF bucket -- see app/models_missing.py::load_models_skipped), and
-  // already reads live on every /models_available call, so this force-
-  // rebuild isn't strictly required for propagation -- it exists as a
-  // tangible "did my edit take effect" confirmation in the Admin menu.
-  async function refreshSkippedModels() {
-    skippedRefreshing = true;
-    skippedRefreshMsg = "";
-    try {
-      const result = await api.modelsSkippedRefresh();
-      skippedRefreshMsg = `refreshed -- ${Object.keys(result).length} models available`;
-    } catch (e) {
-      skippedRefreshMsg = e.message;
-    } finally {
-      skippedRefreshing = false;
-      adminOpen = false;
-    }
   }
 
   function handleWindowClick(e) {
@@ -110,19 +89,7 @@
                 {tab.label}
               </button>
             {/each}
-            <div class="admin-divider"></div>
-            <button
-              type="button"
-              disabled={skippedRefreshing}
-              onclick={refreshSkippedModels}
-              title="Re-read data-hf-sync/models_skipped.json and rebuild the models catalog"
-            >
-              {skippedRefreshing ? "Refreshing…" : "Refresh Skip Models"}
-            </button>
           </div>
-        {/if}
-        {#if skippedRefreshMsg}
-          <div class="admin-toast muted">{skippedRefreshMsg}</div>
         {/if}
       </div>
     </div>
@@ -261,25 +228,6 @@
   .admin-dropdown button.active {
     color: var(--accent);
     background: var(--surface-2);
-  }
-
-  .admin-dropdown button:disabled {
-    cursor: wait;
-    opacity: 0.6;
-  }
-
-  .admin-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 4px 2px;
-  }
-
-  .admin-toast {
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 24px;
-    font-size: 11px;
-    white-space: nowrap;
   }
 
   main {
