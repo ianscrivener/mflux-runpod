@@ -13,3 +13,4 @@ HF bucket outbox not configured; background polling disabled
 HF_TOKEN not configured; HF dataset sync disabled
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+HF_TOKEN not configured; models_hf background refresh disabled
