@@ -54,6 +54,7 @@ class _QuietPollingEndpoints(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_QuietPollingEndpoints())
 
 POLLING_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configs" / "config.yaml"
+HF_HARDWARE_PATH = Path(__file__).resolve().parent.parent / "data-hf-sync" / "hf_hardware.json"
 
 
 def load_polling_config() -> dict:
@@ -536,6 +537,29 @@ def generate_cancel(run_id: int):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/gpu/status", summary="HF Spaces GPU worker's current build state, queue depth, prefetches")
+def gpu_status():
+    from app.generate import DispatchConfigError, worker_status
+    import httpx
+
+    try:
+        return worker_status()
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"worker unreachable: {exc}") from exc
+
+
+@app.get("/gpu/hardware", summary="HF Spaces hardware tiers: specs + pricing (data-hf-sync/hf_hardware.json)")
+def gpu_hardware():
+    import json
+
+    if not HF_HARDWARE_PATH.exists():
+        return {"tiers": []}
+    with open(HF_HARDWARE_PATH, encoding="utf-8") as f:
+        return {"tiers": json.load(f)}
 
 
 class QuantBuildReport(BaseModel):

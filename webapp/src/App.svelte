@@ -4,6 +4,7 @@
   import ModelsView from "./lib/views/ModelsView.svelte";
   import QueueView from "./lib/views/QueueView.svelte";
   import RunsView from "./lib/views/RunsView.svelte";
+  import GpuView from "./lib/views/GpuView.svelte";
   import DatasetsView from "./lib/views/DatasetsView.svelte";
 
   const NAV_TABS = [
@@ -11,6 +12,7 @@
     { id: "models", label: "Models", component: ModelsView },
     { id: "queue", label: "Queue", component: QueueView },
     { id: "runs", label: "Generate", component: RunsView },
+    { id: "gpu", label: "GPU", component: GpuView },
   ];
 
   const ADMIN_TABS = [{ id: "datasets", label: "Datasets", component: DatasetsView }];

@@ -71,5 +71,8 @@ export const api = {
 
   outboxPoll: () => post("/outbox/poll"),
 
+  gpuStatus: () => get("/gpu/status"),
+  gpuHardware: () => get("/gpu/hardware"),
+
   health: () => get("/health"),
 };

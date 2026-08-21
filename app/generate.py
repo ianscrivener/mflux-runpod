@@ -179,6 +179,36 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
     return {"dispatched": True, "run_id": run_id, "jobs": queued}
 
 
+def worker_status() -> dict:
+    """GET the HF Spaces GPU worker's /status: current build state, queue
+    depth, and in-flight prefetches (see docker-runner-hf/worker.py). Same
+    HF_WORKER_URL/auth requirements as dispatch_trigger -- raises
+    DispatchConfigError if HF_WORKER_URL isn't set, and lets httpx errors
+    (worker unreachable, e.g. its Space is asleep/restarting) propagate as-is
+    so the caller can tell "not configured" from "configured but down"."""
+    import os
+
+    import httpx
+
+    worker_url = os.environ.get("HF_WORKER_URL")
+    if not worker_url:
+        raise DispatchConfigError(
+            "HF_WORKER_URL (the deployed HF Spaces GPU worker's base URL) "
+            "is not set on this deployment -- no worker to check status of."
+        )
+
+    hf_token = os.environ.get("HF_TOKEN")
+    headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+    worker_key = os.environ.get("WORKER_API_KEY")
+    if worker_key:
+        headers["X-Worker-Api-Key"] = worker_key
+
+    with httpx.Client(timeout=15.0) as client:
+        response = client.get(f"{worker_url.rstrip('/')}/status", headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+
 def cancel_run(run_id: int) -> dict:
     """Cancel every still-in-flight job for a run and mark it cancelled.
 
