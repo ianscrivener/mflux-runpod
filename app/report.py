@@ -247,6 +247,21 @@ def clear_runs() -> dict:
     return {"runs_deleted": runs_deleted, "quant_builds_deleted": quant_builds_deleted}
 
 
+def delete_run(run_id: int) -> dict:
+    """Delete one run + its quant_builds rows (schema untouched). Same scope
+    as clear_runs -- doesn't touch series_volumes/dispatched_jobs, for the
+    same reason (legacy RunPod-era tracking, not generation-log entries).
+    Returns the counts deleted; both are 0 if run_id didn't exist (caller
+    decides whether that's worth a 404)."""
+    with get_connection() as conn:
+        quant_builds_deleted = conn.execute(
+            "DELETE FROM quant_builds WHERE run_id = ?", (run_id,)
+        ).rowcount
+        runs_deleted = conn.execute("DELETE FROM runs WHERE id = ?", (run_id,)).rowcount
+        conn.commit()
+    return {"runs_deleted": runs_deleted, "quant_builds_deleted": quant_builds_deleted}
+
+
 def record_dispatched_job(run_id: int, quant: str, job_id: str) -> int:
     """One row per RunPod job actually submitted -- see cancel_run() for why."""
     with get_connection() as conn:

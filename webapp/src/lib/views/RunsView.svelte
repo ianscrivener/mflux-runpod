@@ -10,9 +10,14 @@
   let error = $state(null);
   let expanded = $state({}); // run id -> bool
   let details = $state({}); // run id -> detail
+  let buildsByRun = $state({}); // run id -> quant_builds[], for the collapsed row's per-quant coloring
   let busy = $state({});
 
   const QUANT_OPTIONS = ["bf16", "q8", "q6", "q5", "q4", "q3"];
+  // Both mean "confirmed present on Hugging Face" -- skipped_existing is a
+  // quant the backend found already published and left alone, uploaded is
+  // one this run just pushed. Either way there's a real repo to link to.
+  const DONE_QUANT_STATUSES = new Set(["uploaded", "skipped_existing"]);
 
   let configStem = $state("");
   let checkedQuants = $state({});
@@ -24,9 +29,14 @@
 
   async function load() {
     try {
-      const [reportRes, missingRes] = await Promise.all([api.report({ limit: 30 }), api.modelsMissing()]);
+      const [reportRes, missingRes, dumpRes] = await Promise.all([
+        api.report({ limit: 30 }),
+        api.modelsMissing(),
+        api.reportDump(),
+      ]);
       runs = reportRes.runs;
       missingData = missingRes;
+      buildsByRun = Object.fromEntries((dumpRes.runs ?? []).map((r) => [r.id, r.quant_builds ?? []]));
       stemOptions = [...Object.keys(missingRes.missing), ...missingRes.complete].sort();
       if (!configStem && stemOptions.length) configStem = stemOptions[0];
       error = null;
@@ -62,6 +72,19 @@
     busy = { ...busy, [run.id]: true };
     try {
       await api.generateCancel(run.id);
+      await load();
+    } catch (e) {
+      error = e.message;
+    } finally {
+      busy = { ...busy, [run.id]: false };
+    }
+  }
+
+  async function deleteRun(run) {
+    if (!confirm(`Delete run #${run.id} (${run.model_series}) from the log? This does not affect any Hugging Face upload, and cannot be undone.`)) return;
+    busy = { ...busy, [run.id]: true };
+    try {
+      await api.reportDeleteRun(run.id);
       await load();
     } catch (e) {
       error = e.message;
@@ -215,17 +238,34 @@
             </td>
             <td class="muted">{run.id}</td>
             <td><strong>{run.model_series}</strong></td>
-            <td class="muted">{run.quants?.length ? run.quants.join(" ") : "—"}</td>
+            <td class="muted">
+              {#if run.quants?.length}
+                {#each run.quants as q, i}
+                  {@const qb = (buildsByRun[run.id] ?? []).find((b) => b.quant === q)}
+                  {i > 0 ? " " : ""}{#if qb && DONE_QUANT_STATUSES.has(qb.status) && qb.hf_repo_id}<a
+                      class="quant-done-link"
+                      href="https://huggingface.co/{qb.hf_repo_id}"
+                      target="_blank"
+                      rel="noreferrer"
+                    >{q}</a>{:else}{q}{/if}
+                {/each}
+              {:else}
+                —
+              {/if}
+            </td>
             <td><StatusPill status={run.status} /></td>
             <td class="muted" style="font-size:11px">{run.started_at?.slice(0, 19).replace("T", " ")}</td>
             <td class="muted">{run.duration_s ? `${run.duration_s.toFixed(1)}s` : "—"}</td>
             <td class="muted">{run.expected_quants}</td>
-            <td>
+            <td style="display:flex; gap:4px">
               {#if run.status === "running"}
                 <button class="danger" disabled={busy[run.id]} onclick={() => cancel(run)}>
                   Cancel
                 </button>
               {/if}
+              <button class="danger" disabled={busy[run.id]} onclick={() => deleteRun(run)}>
+                Delete
+              </button>
             </td>
           </tr>
           {#if expanded[run.id]}
@@ -241,7 +281,18 @@
                     <tbody>
                       {#each details[run.id].quant_builds as qb}
                         <tr>
-                          <td>{qb.quant}</td>
+                          <td>
+                            {#if DONE_QUANT_STATUSES.has(qb.status) && qb.hf_repo_id}
+                              <a
+                                class="quant-done-link"
+                                href="https://huggingface.co/{qb.hf_repo_id}"
+                                target="_blank"
+                                rel="noreferrer"
+                              >{qb.quant}</a>
+                            {:else}
+                              {qb.quant}
+                            {/if}
+                          </td>
                           <td><StatusPill status={qb.status} /></td>
                           <td class="muted">{qb.total_size_bytes ? `${(qb.total_size_bytes / 1e9).toFixed(2)} GB` : "—"}</td>
                           <td class="muted">{qb.build_duration_s ? `${qb.build_duration_s.toFixed(0)}s` : "—"}</td>
@@ -289,6 +340,14 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+  }
+  .quant-done-link {
+    font-weight: 700;
+    color: var(--success);
+    text-decoration: none;
+  }
+  .quant-done-link:hover {
+    text-decoration: underline;
   }
   .check-inline {
     display: flex;

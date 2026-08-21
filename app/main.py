@@ -29,6 +29,7 @@ from app.models_missing import compute_missing, load_configs, load_overrides
 from app.report import (
     add_quant_build,
     clear_runs,
+    delete_run,
     dump_all,
     recent_runs,
     run_detail,
@@ -622,6 +623,17 @@ def report_clear():
     intentionally blunt maintenance tooling, not something to wire up to a
     casual UI button."""
     return clear_runs()
+
+
+@app.delete("/report/run/{run_id}", summary="Delete one run + its quant_builds rows")
+def report_delete_run(run_id: int):
+    """Removes a single run record -- e.g. a stale 'running' entry left
+    behind by a cancelled/orphaned dispatch (see generate_cancel, which
+    marks the *build job* cancelled but was never meant to also be the way
+    to clean up its row from the log)."""
+    if run_detail(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    return delete_run(run_id)
 
 
 @app.post("/outbox/poll", summary="Process the HF bucket outbox right now")

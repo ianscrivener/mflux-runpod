@@ -50,7 +50,13 @@ def _bucket_id() -> str:
 
 
 def _token() -> str:
-    token = os.environ.get("HF_TOKEN")
+    # .strip() guards against a pasted-in Space secret carrying a trailing
+    # newline/whitespace -- confirmed live 2026-08-21: an unstripped token
+    # with a stray character reached huggingface_hub's bucket-upload session
+    # as the literal Authorization header value, which raised a bare
+    # "ValueError: Invalid header value... failed to parse header value"
+    # instead of a clean auth error.
+    token = (os.environ.get("HF_TOKEN") or "").strip()
     if not token:
         raise OutboxConfigError(
             "HF bucket outbox requires HF_TOKEN in the environment, but it's "

@@ -67,6 +67,7 @@ export const api = {
   },
   reportDump: () => get("/report/dump"),
   reportClear: () => del("/report"),
+  reportDeleteRun: (runId) => del(`/report/run/${runId}`),
 
   outboxPoll: () => post("/outbox/poll"),
 
