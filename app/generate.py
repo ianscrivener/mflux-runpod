@@ -259,5 +259,23 @@ def generate_one(
         "quants_to_build": quants_to_build,
     }
 
-    dispatch = trigger_fn(model_stem, run_id, plan)
+    try:
+        dispatch = trigger_fn(model_stem, run_id, plan)
+    except DispatchConfigError as exc:
+        # trigger_fn (dispatch_trigger) already created the `runs` row above
+        # before it could fail -- without this, a dispatch failure (worker
+        # unreachable, mid-loop POST failure, etc.) propagates straight out
+        # of /generate as a 503 while the run row is left at its 'running'
+        # default forever, with no visible error. exc's message already
+        # carries which quants were successfully queued vs. never attempted
+        # (see dispatch_trigger) -- preserved here as the run's error detail.
+        finished_at = datetime.now(timezone.utc)
+        finish_run(
+            run_id,
+            finished_at=finished_at.isoformat(),
+            duration_s=(finished_at - started_at).total_seconds(),
+            status="failed",
+            error=str(exc),
+        )
+        raise
     return {"run_id": run_id, "plan": plan, "dispatch": dispatch}

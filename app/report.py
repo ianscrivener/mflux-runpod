@@ -81,10 +81,22 @@ def update_run_status_from_children(run_id: int, finished_at: str, error: str | 
     """
     with get_connection() as conn:
         run = conn.execute(
-            "SELECT expected_quants, started_at FROM runs WHERE id = ?", (run_id,)
+            "SELECT expected_quants, started_at, status FROM runs WHERE id = ?", (run_id,)
         ).fetchone()
         if run is None:
             raise ValueError(f"run {run_id} not found")
+
+        if run["status"] == "failed":
+            # Already terminal -- either a dispatch failure marked it failed
+            # before every expected quant was even attempted (see
+            # app/generate.py::generate_one), or an earlier child already
+            # failed. Either way this is sticky: a late callback for some
+            # other quant that *did* build successfully must not resurrect
+            # a partially-dispatched or already-failed run back to
+            # "success"/"partial". The caller's own add_quant_build() call
+            # still records that quant's individual result regardless --
+            # only the run's own aggregate status is pinned here.
+            return "failed"
 
         rows = conn.execute(
             "SELECT status FROM quant_builds WHERE run_id = ?", (run_id,)

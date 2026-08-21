@@ -157,6 +157,7 @@
 {#if generateMsg}<p class="muted" style="font-size:12px">{generateMsg}</p>{/if}
 
 {#if alreadyPublishedWarning}
+  {@const allExcluded = selectedQuants()?.length === alreadyPublishedWarning.length}
   <Modal onclose={() => (alreadyPublishedWarning = null)}>
     <h2 style="margin-bottom:8px">Already on Hugging Face</h2>
     <p>
@@ -164,14 +165,23 @@
       <strong>{alreadyPublishedWarning.join(", ")}</strong>.
     </p>
     <p class="muted" style="font-size:12px">
-      With "overwrite" unchecked, the worker skips these at the upload step
-      -- dispatching now would spend real GPU time (and billing, if not a
-      dry run) rebuilding something it's about to throw away. Check
-      "overwrite" first if you actually want to rebuild {alreadyPublishedWarning.length > 1 ? "these" : "it"}.
+      With "overwrite" unchecked, the service excludes these quant(s) before
+      dispatch -- they're never sent to the worker at all, not built and
+      then skipped at upload.
+      {#if allExcluded}
+        Every quant you selected is already published, so proceeding now
+        would create a run with nothing left to build.
+      {:else}
+        Proceeding now will dispatch a run for only the remaining,
+        not-yet-published quant(s).
+      {/if}
+      Check "overwrite" first if you actually want to rebuild {alreadyPublishedWarning.length > 1 ? "these" : "it"}.
     </p>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
       <button onclick={() => (alreadyPublishedWarning = null)}>Cancel</button>
-      <button class="primary" onclick={submitGenerate}>Proceed anyway</button>
+      <button class="primary" onclick={submitGenerate}>
+        {allExcluded ? "Create empty run anyway" : "Build remaining quants"}
+      </button>
     </div>
   </Modal>
 {/if}
