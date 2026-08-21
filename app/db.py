@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS runs (
     status              TEXT NOT NULL DEFAULT 'running',
     force_hf_overwrite  INTEGER NOT NULL DEFAULT 0,
     expected_quants     INTEGER NOT NULL DEFAULT 0,
+    quants              TEXT,
     error               TEXT
 );
 
@@ -75,6 +76,15 @@ def init_db(db_path: Path | None = None) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        # CREATE TABLE IF NOT EXISTS above doesn't add columns to a runs
+        # table that already existed before `quants` was introduced --
+        # migrate it in explicitly. Existing rows get NULL (recent_runs()/
+        # run_detail() in app/report.py treat that as "not recorded",
+        # not an error).
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+        if "quants" not in existing_columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN quants TEXT")
+        conn.commit()
 
 
 @contextmanager

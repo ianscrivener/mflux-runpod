@@ -1,28 +1,32 @@
 <script>
   import { api } from "../api.js";
   import StatusPill from "../components/StatusPill.svelte";
+  import Modal from "../components/Modal.svelte";
 
   let runs = $state([]);
   let stemOptions = $state([]);
+  let missingData = $state({ missing: {}, complete: [] }); // from /models_missing, reused for the pre-generate already-published check
   let loading = $state(true);
   let error = $state(null);
   let expanded = $state({}); // run id -> bool
   let details = $state({}); // run id -> detail
   let busy = $state({});
 
+  const QUANT_OPTIONS = ["bf16", "q8", "q6", "q5", "q4", "q3"];
+
   let configStem = $state("");
-  let quants = $state("");
-  let mfluxRepo = $state("");
-  let mfluxBranch = $state("");
+  let checkedQuants = $state({});
   let forceOverwrite = $state(false);
-  let dispatch = $state(false);
+  let dryRun = $state(true);
   let generating = $state(false);
   let generateMsg = $state(null);
+  let alreadyPublishedWarning = $state(null); // list of quants, or null if no warning showing
 
   async function load() {
     try {
       const [reportRes, missingRes] = await Promise.all([api.report({ limit: 30 }), api.modelsMissing()]);
       runs = reportRes.runs;
+      missingData = missingRes;
       stemOptions = [...Object.keys(missingRes.missing), ...missingRes.complete].sort();
       if (!configStem && stemOptions.length) configStem = stemOptions[0];
       error = null;
@@ -66,26 +70,48 @@
     }
   }
 
-  function parseQuants(text) {
-    const trimmed = text.trim();
-    if (!trimmed) return null;
-    return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+  function selectedQuants() {
+    const picked = QUANT_OPTIONS.filter((q) => checkedQuants[q]);
+    return picked.length ? picked : null; // none checked = all missing
+  }
+
+  // Of the explicitly-checked quants, which already have a published repo
+  // on Hugging Face -- so dispatching for them (with overwrite off) would
+  // just spend real GPU time/money on a build the backend already knows
+  // will get skipped at the upload step. Only meaningful for an explicit
+  // selection; "none checked" already means "whatever's missing" and can't
+  // pick something already-published by construction.
+  function alreadyPublishedQuants(stem, picked) {
+    if (!picked) return [];
+    if (missingData.complete.includes(stem)) return picked;
+    const missingSet = new Set(missingData.missing[stem]?.missing_quants ?? []);
+    return picked.filter((q) => !missingSet.has(q));
+  }
+
+  function onGenerateClick() {
+    if (!configStem) return;
+    if (!forceOverwrite) {
+      const already = alreadyPublishedQuants(configStem, selectedQuants());
+      if (already.length) {
+        alreadyPublishedWarning = already;
+        return;
+      }
+    }
+    submitGenerate();
   }
 
   async function submitGenerate() {
-    if (!configStem) return;
+    alreadyPublishedWarning = null;
     generating = true;
     generateMsg = null;
     try {
       const res = await api.generate({
         config_stem: configStem,
-        quants: parseQuants(quants),
-        mflux_repo: mfluxRepo || null,
-        mflux_branch: mfluxBranch || null,
+        quants: selectedQuants(),
         force_hf_overwrite: forceOverwrite,
-        dispatch,
+        dispatch: !dryRun,
       });
-      generateMsg = `run #${res.run_id ?? res.id ?? "?"} started (${dispatch ? "dispatched" : "dry-run"})`;
+      generateMsg = `run #${res.run_id ?? res.id ?? "?"} started (${dryRun ? "dry-run" : "dispatched"})`;
       await load();
     } catch (e) {
       generateMsg = e.message;
@@ -110,16 +136,45 @@
   <select bind:value={configStem}>
     {#each stemOptions as s}<option value={s}>{s}</option>{/each}
   </select>
-  <input placeholder="quants (blank = all missing)" bind:value={quants} />
-  <input placeholder="mflux repo override" bind:value={mfluxRepo} />
-  <input placeholder="branch" bind:value={mfluxBranch} style="width:100px" />
-  <label class="check-inline"><input type="checkbox" bind:checked={forceOverwrite} /> force overwrite</label>
-  <label class="check-inline"><input type="checkbox" bind:checked={dispatch} /> dispatch (real, billed)</label>
-  <button class="primary" onclick={submitGenerate} disabled={generating || !configStem}>
-    {generating ? "…" : dispatch ? "Dispatch" : "Dry run"}
+  <div class="quant-checks">
+    {#each QUANT_OPTIONS as q}
+      <label class="check-inline">
+        <input type="checkbox" checked={!!checkedQuants[q]} onchange={(e) => (checkedQuants = { ...checkedQuants, [q]: e.target.checked })} />
+        {q.toUpperCase()}
+      </label>
+    {/each}
+  </div>
+  &nbsp; <b>|</b> &nbsp;
+  <label class="check-inline"><input type="checkbox" bind:checked={forceOverwrite} /> overwrite</label>
+  <label class="check-inline"><input type="checkbox" bind:checked={dryRun} /> dry run</label>
+  <button class="primary" onclick={onGenerateClick} disabled={generating || !configStem}>
+    {generating ? "…" : dryRun ? "Dry run" : "Dispatch"}
   </button>
 </div>
+<p class="muted" style="font-size:12px">
+  <strong>force</strong>: force overwrite of Hugging Face MFlux-Community model &nbsp;|&nbsp; <strong>dry run</strong>: uncheck to convert model &ndash; incurs $$ billing
+</p>
 {#if generateMsg}<p class="muted" style="font-size:12px">{generateMsg}</p>{/if}
+
+{#if alreadyPublishedWarning}
+  <Modal onclose={() => (alreadyPublishedWarning = null)}>
+    <h2 style="margin-bottom:8px">Already on Hugging Face</h2>
+    <p>
+      <strong>{configStem}</strong> already has a published repo for:
+      <strong>{alreadyPublishedWarning.join(", ")}</strong>.
+    </p>
+    <p class="muted" style="font-size:12px">
+      With "overwrite" unchecked, the worker skips these at the upload step
+      -- dispatching now would spend real GPU time (and billing, if not a
+      dry run) rebuilding something it's about to throw away. Check
+      "overwrite" first if you actually want to rebuild {alreadyPublishedWarning.length > 1 ? "these" : "it"}.
+    </p>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+      <button onclick={() => (alreadyPublishedWarning = null)}>Cancel</button>
+      <button class="primary" onclick={submitGenerate}>Proceed anyway</button>
+    </div>
+  </Modal>
+{/if}
 
 <div class="header-row">
   <h2>Runs</h2>
@@ -134,7 +189,7 @@
   <div class="card scroll-x">
     <table>
       <thead>
-        <tr><th></th><th>#</th><th>Series</th><th>Status</th><th>Started</th><th>Duration</th><th>Quants</th><th></th></tr>
+        <tr><th></th><th>#</th><th>Series</th><th>Quants</th><th>Status</th><th>Started</th><th>Duration</th><th>Quants Count</th><th></th></tr>
       </thead>
       <tbody>
         {#each runs as run (run.id)}
@@ -150,6 +205,7 @@
             </td>
             <td class="muted">{run.id}</td>
             <td><strong>{run.model_series}</strong></td>
+            <td class="muted">{run.quants?.length ? run.quants.join(" ") : "—"}</td>
             <td><StatusPill status={run.status} /></td>
             <td class="muted" style="font-size:11px">{run.started_at?.slice(0, 19).replace("T", " ")}</td>
             <td class="muted">{run.duration_s ? `${run.duration_s.toFixed(1)}s` : "—"}</td>
@@ -164,7 +220,7 @@
           </tr>
           {#if expanded[run.id]}
             <tr>
-              <td colspan="8">
+              <td colspan="9">
                 {#if !details[run.id]}
                   <span class="muted">Loading…</span>
                 {:else}
@@ -197,7 +253,7 @@
           {/if}
         {/each}
         {#if runs.length === 0}
-          <tr><td colspan="8" class="muted">No runs yet.</td></tr>
+          <tr><td colspan="9" class="muted">No runs yet.</td></tr>
         {/if}
       </tbody>
     </table>
@@ -217,6 +273,11 @@
     align-items: center;
     padding: 12px;
     margin: 12px 0;
+    flex-wrap: wrap;
+  }
+  .quant-checks {
+    display: flex;
+    gap: 8px;
     flex-wrap: wrap;
   }
   .check-inline {

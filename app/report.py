@@ -1,5 +1,6 @@
 """Run/quant-build reporting (PRD: /report). Pure reads over db.py's SQLite tables."""
 
+import json
 from datetime import datetime, timezone
 
 from app.db import get_connection
@@ -9,6 +10,7 @@ def create_run(
     model_series: str,
     started_at: str,
     expected_quants: int = 0,
+    quants: list[str] | None = None,
     hf_model_name: str | None = None,
     mflux_repo: str | None = None,
     mflux_branch: str | None = None,
@@ -19,13 +21,18 @@ def create_run(
     with — one GPU job per quant means N jobs write children of one `runs`
     row, so the run's aggregate status must be derived from those children
     (see update_run_status_from_children) rather than trusted from any single
-    job's callback, or last-writer-wins clobbers earlier jobs' outcomes."""
+    job's callback, or last-writer-wins clobbers earlier jobs' outcomes.
+
+    quants is the planned quant list (e.g. ["q4", "q8"]), stored as JSON so
+    the webapp's run list can show what was actually requested without
+    waiting for any quant_builds row to land -- those only exist once a
+    quant job reports back, which can be minutes after the run starts."""
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO runs
                 (model_series, hf_model_name, mflux_repo, mflux_branch, machine_type,
-                 started_at, force_hf_overwrite, expected_quants)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                 started_at, force_hf_overwrite, expected_quants, quants)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 model_series,
                 hf_model_name,
@@ -35,6 +42,7 @@ def create_run(
                 started_at,
                 int(force_hf_overwrite),
                 expected_quants,
+                json.dumps(quants) if quants is not None else None,
             ),
         )
         conn.commit()
@@ -145,12 +153,22 @@ def add_quant_build(
         return cur.lastrowid
 
 
+def _run_dict(row) -> dict:
+    """dict(row) plus decoding the JSON-encoded `quants` column back into a
+    list -- None for a run recorded before that column existed (migrated
+    in as NULL, see app/db.py::init_db) or one created with quants=None
+    (e.g. "all missing", no explicit list)."""
+    run = dict(row)
+    run["quants"] = json.loads(run["quants"]) if run.get("quants") else None
+    return run
+
+
 def recent_runs(limit: int = 20) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [_run_dict(row) for row in rows]
 
 
 def run_detail(run_id: int) -> dict | None:
@@ -161,7 +179,7 @@ def run_detail(run_id: int) -> dict | None:
         builds = conn.execute(
             "SELECT * FROM quant_builds WHERE run_id = ? ORDER BY id", (run_id,)
         ).fetchall()
-        return {**dict(run), "quant_builds": [dict(b) for b in builds]}
+        return {**_run_dict(run), "quant_builds": [dict(b) for b in builds]}
 
 
 def runs_for_series(model_series: str, limit: int = 20) -> list[dict]:
@@ -170,7 +188,7 @@ def runs_for_series(model_series: str, limit: int = 20) -> list[dict]:
             "SELECT * FROM runs WHERE model_series = ? ORDER BY id DESC LIMIT ?",
             (model_series, limit),
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [_run_dict(row) for row in rows]
 
 
 def dump_all() -> dict:
@@ -179,7 +197,7 @@ def dump_all() -> dict:
     this is deliberately unlimited: it's a "give me everything" report, so
     expect it to grow with run history."""
     with get_connection() as conn:
-        runs = [dict(r) for r in conn.execute("SELECT * FROM runs ORDER BY id").fetchall()]
+        runs = [_run_dict(r) for r in conn.execute("SELECT * FROM runs ORDER BY id").fetchall()]
         builds_by_run: dict[int, list[dict]] = {}
         for b in conn.execute("SELECT * FROM quant_builds ORDER BY id").fetchall():
             builds_by_run.setdefault(b["run_id"], []).append(dict(b))

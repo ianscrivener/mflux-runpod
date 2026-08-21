@@ -39,10 +39,37 @@ from app.report import (
 
 logger = logging.getLogger(__name__)
 
-OUTBOX_POLL_INTERVAL_S = 30
-MODELS_HF_REFRESH_INTERVAL_S = 300  # 5 minutes
-HF_SYNC_INTERVAL_S = 300  # 5 minutes
-MODELS_SRC_DETAILS_REFRESH_INTERVAL_S = 6 * 60 * 60  # 6 hours -- see loop docstring
+# The webapp polls these endpoints every few seconds; suppress their uvicorn
+# access-log lines so `just serve` output stays readable.
+_QUIET_ACCESS_LOG_PATHS = ("/models_missing", "/health", "/report", "/models_queue")
+
+
+class _QuietPollingEndpoints(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not any(f"GET {path}" in message for path in _QUIET_ACCESS_LOG_PATHS)
+
+
+logging.getLogger("uvicorn.access").addFilter(_QuietPollingEndpoints())
+
+POLLING_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configs" / "config.yaml"
+
+
+def load_polling_config() -> dict:
+    """Background-loop polling intervals, externalized to configs/config.yaml
+    so they're tunable without a code change. Path resolved relative to this
+    file, not cwd -- same convention as app/hf_datasets.py's CONFIG_PATH."""
+    import yaml
+
+    with open(POLLING_CONFIG_PATH, encoding="utf-8") as f:
+        return yaml.safe_load(f)["polling"]
+
+
+_polling = load_polling_config()
+OUTBOX_POLL_INTERVAL_S = _polling["outbox_poll_interval_s"]
+MODELS_HF_REFRESH_INTERVAL_S = _polling["models_hf_refresh_interval_s"]
+HF_SYNC_INTERVAL_S = _polling["hf_sync_interval_s"]
+MODELS_SRC_DETAILS_REFRESH_INTERVAL_S = _polling["models_src_details_refresh_interval_s"]
 
 
 async def _outbox_poll_loop() -> None:

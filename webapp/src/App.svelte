@@ -10,7 +10,7 @@
     { id: "summary", label: "Summary", component: SummaryView },
     { id: "models", label: "Models", component: ModelsView },
     { id: "queue", label: "Queue", component: QueueView },
-    { id: "runs", label: "Runs / Generate", component: RunsView },
+    { id: "runs", label: "Generate", component: RunsView },
   ];
 
   const ADMIN_TABS = [{ id: "datasets", label: "Datasets", component: DatasetsView }];

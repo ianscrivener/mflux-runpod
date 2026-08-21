@@ -228,6 +228,7 @@ def generate_one(
         model_series=model_stem,
         started_at=started_at.isoformat(),
         expected_quants=len(quants_to_build),
+        quants=quants_to_build,
         hf_model_name=config.get("hf_model_name"),
         mflux_repo=mflux_repo,
         mflux_branch=config["mflux_branch"],

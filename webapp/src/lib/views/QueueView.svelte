@@ -4,24 +4,15 @@
   const STATUSES = ["pending", "approved", "skipped"];
 
   let entries = $state([]);
-  let stems = $state([]);
   let loading = $state(true);
   let error = $state(null);
   let busy = $state({}); // entry id -> bool
   let syncMsg = $state(null);
 
-  let newStem = $state("");
-  let newQuants = $state("");
-  let newNote = $state("");
-  let newForceOverwrite = $state(false);
-  let adding = $state(false);
-
   async function load() {
     try {
-      const [queueRes, missingRes] = await Promise.all([api.queueList(), api.modelsMissing()]);
+      const queueRes = await api.queueList();
       entries = queueRes.entries;
-      stems = [...Object.keys(missingRes.missing), ...missingRes.complete].sort();
-      if (!newStem && stems.length) newStem = stems[0];
       error = null;
     } catch (e) {
       error = e.message;
@@ -38,27 +29,6 @@
     const trimmed = text.trim();
     if (!trimmed) return null;
     return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
-  }
-
-  async function addEntry() {
-    if (!newStem) return;
-    adding = true;
-    try {
-      await api.queueAdd({
-        model_stem: newStem,
-        quants: parseQuants(newQuants),
-        force_hf_overwrite: newForceOverwrite,
-        note: newNote || null,
-      });
-      newQuants = "";
-      newNote = "";
-      newForceOverwrite = false;
-      await load();
-    } catch (e) {
-      error = e.message;
-    } finally {
-      adding = false;
-    }
   }
 
   async function setStatus(entry, status) {
@@ -146,16 +116,6 @@
 
 {#if error}<p class="pill danger">{error}</p>{/if}
 
-<div class="card add-form">
-  <select bind:value={newStem}>
-    {#each stems as s}<option value={s}>{s}</option>{/each}
-  </select>
-  <input placeholder="quants (comma-sep, blank = whatever's missing)" bind:value={newQuants} style="flex:1" />
-  <input placeholder="note" bind:value={newNote} style="flex:1" />
-  <label class="check-inline"><input type="checkbox" bind:checked={newForceOverwrite} /> force overwrite</label>
-  <button class="primary" onclick={addEntry} disabled={adding || !newStem}>Add</button>
-</div>
-
 {#if loading}
   <p class="muted">Loading…</p>
 {:else}
@@ -219,21 +179,5 @@
     display: flex;
     align-items: center;
     gap: 8px;
-  }
-  .add-form {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    padding: 12px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-  }
-  .check-inline {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--muted);
-    white-space: nowrap;
   }
 </style>

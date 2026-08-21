@@ -24,6 +24,7 @@
   const MODEL_TYPE_ORDER = ["image", "video", "depth-estimation", "video-upscale"];
   let hiddenTypes = $state(new Set()); // model_type values currently filtered out
   let hiddenFamilies = $state(new Set()); // model_family values currently filtered out
+  let statusFilter = $state(null); // null (all) | "done" | "missing"
 
   function toggleInSet(set, value) {
     const next = new Set(set);
@@ -93,6 +94,29 @@
 
   function toggleFamily(f) {
     hiddenFamilies = toggleInSet(hiddenFamilies, f);
+  }
+
+  function toggleStatusFilter(v) {
+    statusFilter = statusFilter === v ? null : v;
+  }
+
+  // "Done" = every expected quant is published (green); "Missing" = at
+  // least one expected quant isn't (red/queue-pill, or grey/unsupported for
+  // a catalog-only row -- both count as "not done" here).
+  function isDone(r) {
+    return r.quants.length > 0 && r.missingQuants.size === 0;
+  }
+
+  function isMissing(r) {
+    return r.missingQuants.size > 0;
+  }
+
+  function showAllFamilies() {
+    hiddenFamilies = new Set();
+  }
+
+  function hideAllFamilies() {
+    hiddenFamilies = new Set(presentFamilies);
   }
 
   async function queueQuant(row, quant) {
@@ -186,7 +210,12 @@
   });
 
   const visibleRows = $derived(
-    sortedRows.filter((r) => !hiddenTypes.has(r.modelType) && !hiddenFamilies.has(r.family))
+    sortedRows.filter(
+      (r) =>
+        !hiddenTypes.has(r.modelType) &&
+        !hiddenFamilies.has(r.family) &&
+        (statusFilter === "done" ? isDone(r) : statusFilter === "missing" ? isMissing(r) : true)
+    )
   );
 
   // Published-quant detail modal -- fetched on demand (not on every poll)
@@ -255,6 +284,20 @@
   <p class="muted">Loading…</p>
 {:else}
   <div class="filter-bar">
+    <span class="filter-label muted">Status:</span>
+    <button
+      type="button"
+      class="pill filter-toggle"
+      class:off={statusFilter !== "done"}
+      onclick={() => toggleStatusFilter("done")}
+    >Done</button>
+    <button
+      type="button"
+      class="pill filter-toggle"
+      class:off={statusFilter !== "missing"}
+      onclick={() => toggleStatusFilter("missing")}
+    >Missing</button>
+    <span class="filter-separator">|</span>
     <span class="filter-label muted">Image Type:</span>
     {#each presentTypes as t}
       <button
@@ -266,6 +309,7 @@
     {/each}
     <span class="filter-separator">|</span>
     <span class="filter-label muted">Model Family:</span>
+    <button type="button" class="link-toggle" onclick={showAllFamilies}>All</button>/<button type="button" class="link-toggle" onclick={hideAllFamilies}>None</button>
     {#each presentFamilies as f}
       <button
         type="button"
@@ -536,6 +580,17 @@
 
   .filter-separator {
     color: var(--muted);
+  }
+
+  .link-toggle {
+    font-family: inherit;
+    font-size: 12px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   .pill.filter-toggle {

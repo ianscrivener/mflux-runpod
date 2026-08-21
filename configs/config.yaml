@@ -1,0 +1,24 @@
+# Orchestrator background-loop polling intervals, in seconds.
+# Loaded once at startup by app/main.py -- see load_polling_config().
+polling:
+  # How often to drain the HF-bucket outbox and apply any job results the
+  # GPU worker has dropped there. Keep this low -- it's what makes a
+  # finished/failed build show up in the UI promptly.
+  outbox_poll_interval_s: 30
+
+  # How often to rescan the mflux-community HF org and refresh
+  # models_hf.json (what's currently published), skipping the scan if the
+  # manifest is already fresher than this.
+  models_hf_refresh_interval_s: 30
+
+  # How often to pull every dataset in configs/hf_datasets.yaml from the HF
+  # bucket, so this process's local mirror stays current with any other
+  # writer. Cheap even at this cadence since pulls are metadata-only when
+  # nothing changed.
+  hf_sync_interval_s: 300 # 5 minutes
+
+  # How often to rescan every model's upstream source repo (size, commit
+  # hash, last-modified date, text encoder). Deliberately much longer than
+  # the other intervals -- one HF API call per distinct source repo, and
+  # source repos change on the order of days/weeks, not minutes.
+  models_src_details_refresh_interval_s: 21600 # 6 hours

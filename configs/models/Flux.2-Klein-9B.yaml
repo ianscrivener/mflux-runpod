@@ -9,6 +9,6 @@ quants:
   - q8
   - bf16
 collection:
-  name: Flux.2 Klein 9B
+  name: Flux2 Klein 9B
   description: MFlux quantized builds of Flux.2 Klein 9B
   version: 1.0.0
