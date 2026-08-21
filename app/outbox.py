@@ -121,7 +121,7 @@ def process_pending() -> dict:
     malformed payload still identifies which run to flag."""
     from huggingface_hub.errors import HfHubHTTPError
 
-    from app.report import add_quant_build, update_run_status_from_children
+    from app.report import add_quant_build, is_run_deleted, update_run_status_from_children
 
     try:
         pending = list_pending()
@@ -138,6 +138,15 @@ def process_pending() -> dict:
         try:
             payload = get_result(key)
             run_id = int(key.removeprefix(RESULTS_PREFIX).split("/")[0])
+            if is_run_deleted(run_id):
+                # The run was explicitly deleted (see report.delete_run)
+                # after this job was dispatched -- there's nothing left to
+                # apply this result to. Discard the object same as a
+                # normally-applied one, without inserting an orphaned
+                # quant_builds row for a run that no longer exists.
+                delete_result(key)
+                processed.append(key)
+                continue
             for qb in payload.get("quant_builds", []):
                 add_quant_build(
                     run_id,

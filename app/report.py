@@ -84,6 +84,17 @@ def update_run_status_from_children(run_id: int, finished_at: str, error: str | 
             "SELECT expected_quants, started_at, status FROM runs WHERE id = ?", (run_id,)
         ).fetchone()
         if run is None:
+            deleted = conn.execute(
+                "SELECT 1 FROM deleted_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if deleted is not None:
+                # Deliberately deleted (see delete_run's tombstone), not a
+                # genuine anomaly -- a build job dispatched before the
+                # delete can still report back after. Nothing to update;
+                # the caller (process_pending) treats this the same as a
+                # normally-applied result and discards the outbox object
+                # instead of retrying it forever.
+                return "deleted"
             raise ValueError(f"run {run_id} not found")
 
         if run["status"] == "failed":
@@ -252,14 +263,36 @@ def delete_run(run_id: int) -> dict:
     as clear_runs -- doesn't touch series_volumes/dispatched_jobs, for the
     same reason (legacy RunPod-era tracking, not generation-log entries).
     Returns the counts deleted; both are 0 if run_id didn't exist (caller
-    decides whether that's worth a 404)."""
+    decides whether that's worth a 404).
+
+    Records a tombstone in deleted_runs when a run was actually deleted --
+    its build job may still be in flight on the worker and report back
+    later; see update_run_status_from_children's deleted_runs check for why
+    that must not raise/retry forever once the run row is gone."""
     with get_connection() as conn:
         quant_builds_deleted = conn.execute(
             "DELETE FROM quant_builds WHERE run_id = ?", (run_id,)
         ).rowcount
         runs_deleted = conn.execute("DELETE FROM runs WHERE id = ?", (run_id,)).rowcount
+        if runs_deleted:
+            conn.execute(
+                "INSERT OR REPLACE INTO deleted_runs (run_id, deleted_at) VALUES (?, ?)",
+                (run_id, datetime.now(timezone.utc).isoformat()),
+            )
         conn.commit()
     return {"runs_deleted": runs_deleted, "quant_builds_deleted": quant_builds_deleted}
+
+
+def is_run_deleted(run_id: int) -> bool:
+    """True if run_id was explicitly removed via delete_run(). Used by
+    process_pending to skip add_quant_build entirely (not just the status
+    update) for a late result on a deleted run, so no orphaned quant_builds
+    row gets inserted either."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM deleted_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        return row is not None
 
 
 def record_dispatched_job(run_id: int, quant: str, job_id: str) -> int:

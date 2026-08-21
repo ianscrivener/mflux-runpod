@@ -239,11 +239,13 @@ def models_hf_update():
 @app.get("/models_missing")
 def models_missing():
     from app.models_catalog import get_published_hf_manifest
+    from app.models_missing import load_models_skipped
 
     configs = load_configs()
     hf_manifest = get_published_hf_manifest()
     overrides = load_overrides()
-    return compute_missing(configs, hf_manifest, overrides)
+    skip_rules = load_models_skipped()
+    return compute_missing(configs, hf_manifest, overrides, skip_rules)
 
 
 @app.post("/models_missing/update", summary="Materialize + publish the current missing-models diff")

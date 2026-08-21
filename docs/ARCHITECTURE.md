@@ -236,7 +236,7 @@ live 2026-08-19, before this split existed).
 | `models_src_details` | `data-hf-sync/models_src_details.json` | us -- pushed by `refresh_models_src_details` | per-model upstream source size/hash/date/text-encoder |
 | `logs/devops.jsonl`, `logs/conversions.jsonl` | `data-hf-sync/logs/*.jsonl` | reserved for future run/quant-build event logs | not yet wired into `app/report.py`'s write path -- deferred |
 | `models_queue` | `data-hf-sync/models_queue.json` | **the GPU worker's HF bucket is the real master** (`app/queue_store.py`, `queue/` prefix -- moved off DO Spaces 2026-08-20, same move as the outbox); this dataset copy is a throwaway mirror | human-curated, not derivable from anything else |
-| `models_skipped` | `data-hf-sync/models_skipped.json` | us -- hand-edited | display-only skip rules for `/models_available` (family/sub-family/model/quant); never deletes anything, only hides |
+| `models_skipped` | `data-hf-sync/models_skipped.json` | us -- hand-edited | display-only skip rules; never deletes anything, only hides. `/models_available` honors all four rule types (family/sub-family/model/quant). `/models_missing` -- and so the Generate/Queue pages' select lists, which build their options from it -- only honors `skipped_models` (matched by config stem, confirmed live 2026-08-21 after that gap let a skipped model still appear there); `skipped_familys`/`skipped_model_sub_familys`/`skipped_quants` can't be evaluated at that layer (no `models_mflux.json` catalog access -- would create a circular import with `models_catalog.py`) |
 
 Change detection is metadata-only: `huggingface_hub`'s bucket API
 (`get_bucket_paths_info`) returns each file's `xet_hash` -- a real content
@@ -364,7 +364,7 @@ Key points:
 | `GET /models_mflux` | Full MFlux-supported model catalog (`data-hf-sync/models_mflux.json`) |
 | `GET /models_hf` | Cached snapshot of what's published on the `mflux-community` HF org |
 | `POST /models_hf/update` | Re-scan the HF org live, refresh the cache |
-| `GET /models_missing` | Diff `configs/models/*.yaml` against the HF cache (+ overrides) |
+| `GET /models_missing` | Diff `configs/models/*.yaml` against the HF cache (+ overrides.yaml + models_skipped.json's `skipped_models` rule only -- see the `models_skipped` dataset row above) |
 | `POST /models_missing/update` | Materialize the current diff to `data-hf-sync/models_missing.json` and publish it |
 | `GET /models_src_details` | Per-model upstream source repo size/hash/date/text-encoder |
 | `POST /models_src_details/update` | Rescan every model's upstream source repo and publish the details |

@@ -140,6 +140,7 @@ def compute_missing(
     configs: dict[str, dict],
     hf_manifest: dict,
     overrides: dict | None = None,
+    skip_rules: dict | None = None,
 ) -> dict:
     """Diff configs' expected repos against the current HF manifest, then apply overrides.
 
@@ -147,10 +148,23 @@ def compute_missing(
     removes a stem from "missing" (moved to "complete" instead, marked overridden).
     force_include adds a stem to "missing" with every quant listed, even if all
     already exist on HF.
+
+    skip_rules (see load_models_skipped) drops a stem from the result
+    entirely -- neither "missing" nor "complete" -- same as
+    compute_available_models does for the Models page, so a skipped model
+    stops appearing in the Generate/Queue pages' select lists too. Only the
+    "models" rule (by config stem, case-insensitive) applies here: this
+    function has no models_mflux.json catalog access (by design -- pulling
+    that in would make models_missing.py depend on models_catalog.py, which
+    already depends the other way), so "families"/"sub_families" (which
+    need a config's resolved catalog entry) and "quants" (keyed by catalog
+    slug, not config stem) can't be evaluated at this layer. Those two rule
+    types are only honored on the Models page.
     """
     overrides = overrides or {"force_include": [], "force_exclude": []}
     force_include = set(overrides.get("force_include") or [])
     force_exclude = set(overrides.get("force_exclude") or [])
+    skipped_models = (skip_rules or {}).get("models", set())
 
     published = {m["model_name"] for m in hf_manifest.get("hf_models", [])}
 
@@ -158,6 +172,8 @@ def compute_missing(
     complete: list[str] = []
 
     for stem, config in configs.items():
+        if stem.lower() in skipped_models:
+            continue
         repo_ids = expected_repo_ids(config)
         missing_quants = [
             quant for quant, repo_id in repo_ids.items() if repo_id not in published
@@ -190,7 +206,9 @@ def refresh_models_missing() -> dict:
     from app.hf_datasets import push
     from app.models_hf import load_models_hf
 
-    result = compute_missing(load_configs(), load_models_hf(), load_overrides())
+    result = compute_missing(
+        load_configs(), load_models_hf(), load_overrides(), load_models_skipped()
+    )
 
     MODELS_MISSING_PATH.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(

@@ -19,6 +19,14 @@
   // one this run just pushed. Either way there's a real repo to link to.
   const DONE_QUANT_STATUSES = new Set(["uploaded", "skipped_existing"]);
 
+  // qb is undefined for a quant that hasn't reported back at all yet, which
+  // counts as "pending" the same as an explicit "building" status.
+  function quantClass(qb) {
+    if (qb && DONE_QUANT_STATUSES.has(qb.status)) return "quant-done";
+    if (qb && qb.status === "failed") return "quant-failed";
+    return "quant-pending";
+  }
+
   let configStem = $state("");
   let checkedQuants = $state({});
   let forceOverwrite = $state(false);
@@ -243,11 +251,11 @@
                 {#each run.quants as q, i}
                   {@const qb = (buildsByRun[run.id] ?? []).find((b) => b.quant === q)}
                   {i > 0 ? " " : ""}{#if qb && DONE_QUANT_STATUSES.has(qb.status) && qb.hf_repo_id}<a
-                      class="quant-done-link"
+                      class={quantClass(qb)}
                       href="https://huggingface.co/{qb.hf_repo_id}"
                       target="_blank"
                       rel="noreferrer"
-                    >{q}</a>{:else}{q}{/if}
+                    >{q}</a>{:else}<span class={quantClass(qb)}>{q}</span>{/if}
                 {/each}
               {:else}
                 —
@@ -284,13 +292,13 @@
                           <td>
                             {#if DONE_QUANT_STATUSES.has(qb.status) && qb.hf_repo_id}
                               <a
-                                class="quant-done-link"
+                                class={quantClass(qb)}
                                 href="https://huggingface.co/{qb.hf_repo_id}"
                                 target="_blank"
                                 rel="noreferrer"
                               >{qb.quant}</a>
                             {:else}
-                              {qb.quant}
+                              <span class={quantClass(qb)}>{qb.quant}</span>
                             {/if}
                           </td>
                           <td><StatusPill status={qb.status} /></td>
@@ -341,13 +349,21 @@
     gap: 8px;
     flex-wrap: wrap;
   }
-  .quant-done-link {
+  .quant-done {
     font-weight: 700;
     color: var(--success);
     text-decoration: none;
   }
-  .quant-done-link:hover {
+  .quant-done:hover {
     text-decoration: underline;
+  }
+  .quant-failed {
+    font-weight: 700;
+    color: var(--danger);
+  }
+  .quant-pending {
+    font-weight: 700;
+    color: var(--pending);
   }
   .check-inline {
     display: flex;

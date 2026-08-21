@@ -40,6 +40,11 @@ configs/models/*.yaml  Per-model build config (model_object, model_config, quant
                         generation — configs/models/, not data-hf-sync/models_mflux.json, is the
                         source of truth for what's buildable.
 configs/overrides.yaml  Manual force_include/force_exclude overrides for /models_missing.
+data-hf-sync/models_skipped.json  Hand-edited skip rules (family/sub-family/model/quant).
+                        /models_available (Models page) honors all four rule types.
+                        /models_missing (Generate/Queue pages' select lists) only honors
+                        skipped_models (by config stem) -- the other three need catalog
+                        access /models_missing doesn't have; see docs/ARCHITECTURE.md.
 configs/hf_datasets.yaml  HF-bucket sync locations for the seven datasets (app/hf_datasets.py).
 
 data-hf-sync/models_mflux.json Snapshot of models supported by MFlux (full catalog, task 1 placeholder

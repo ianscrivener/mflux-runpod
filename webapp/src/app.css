@@ -13,6 +13,7 @@
   --success: #2f8f5b;
   --danger: #b3432f;
   --warn: #ab7d1f;
+  --pending: #0a84ff;
   --shadow: 0 1px 2px rgba(20, 24, 29, 0.06), 0 4px 12px rgba(20, 24, 29, 0.05);
 }
 
@@ -30,6 +31,7 @@
     --success: #4dab7a;
     --danger: #cf6a54;
     --warn: #cf9f3f;
+    --pending: #0a84ff;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
   }
 }
@@ -47,6 +49,7 @@
   --success: #4dab7a;
   --danger: #cf6a54;
   --warn: #cf9f3f;
+  --pending: #0a84ff;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 

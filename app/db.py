@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS dispatched_jobs (
     cancelled_at        TEXT
 );
 
+-- One row per run_id removed via delete_run() -- lets a late outbox
+-- callback for a job dispatched before the delete tell "deliberately
+-- deleted" apart from "never existed" (still a real anomaly). Without
+-- this, process_pending() has no way to distinguish the two once the
+-- `runs` row itself is gone, and a late result for a deleted run gets
+-- stuck retrying forever instead of being cleanly discarded.
+CREATE TABLE IF NOT EXISTS deleted_runs (
+    run_id              INTEGER PRIMARY KEY,
+    deleted_at          TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_quant_builds_run_id ON quant_builds(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_model_series ON runs(model_series);
 CREATE INDEX IF NOT EXISTS idx_series_volumes_model_series ON series_volumes(model_series);
