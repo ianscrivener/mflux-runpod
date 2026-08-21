@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **mflux-runpod** (945 symbols, 3889 relationships, 75 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **mflux-runpod** (1010 symbols, 4170 relationships, 80 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
@@ -42,6 +42,15 @@ This project is indexed by GitNexus as **mflux-runpod** (945 symbols, 3889 relat
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Project Naming
+
+- The app's user-facing name is **MFlux-Conv** (renamed from `mflux-runpod`, which
+  named the app after the RunPod GPU backend that has since been replaced by a
+  Hugging Face Spaces Docker worker -- the old name no longer fit). Use "MFlux-Conv"
+  in frontend copy, docs, and API metadata going forward.
+- The repo directory, git history, and the GitNexus index name (`mflux-runpod` in
+  the resource URIs above) are unchanged -- do not rename those.
 
 ## Modal / Remote Execution
 

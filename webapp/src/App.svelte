@@ -54,7 +54,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="topbar-inner">
-      <h1>MFlux Orchestrator</h1>
+      <h1>MFlux-Conv</h1>
       <nav>
         {#each NAV_TABS as tab (tab.id)}
           <button

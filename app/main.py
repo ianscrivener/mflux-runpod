@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI):
     hf_sync_task.cancel()
 
 
-app = FastAPI(title="mflux-runpod orchestrator", lifespan=lifespan)
+app = FastAPI(title="mflux-conv orchestrator", lifespan=lifespan)
 
 
 @app.get("/models_mflux")

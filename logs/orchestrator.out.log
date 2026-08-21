@@ -1,1 +1,15 @@
 INFO:     127.0.0.1:53020 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51320 - "GET /text_encoder_aliases HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51321 - "GET /models_available HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51322 - "GET /models_src_details HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51322 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51321 - "GET /assets/index-CGnDXLPT.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51322 - "GET /assets/index-C88ayewp.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51321 - "GET /models_hf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51322 - "GET /models_available HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51371 - "GET /models_hf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51370 - "GET /models_available HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51388 - "GET /models_hf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51387 - "GET /models_available HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51419 - "GET /models_hf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51388 - "GET /models_available HTTP/1.1" 200 OK

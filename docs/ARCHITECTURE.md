@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes how `mflux-runpod` actually works today. For the original
+This document describes how `MFlux-Conv` (formerly `mflux-runpod`) actually works today. For the original
 design intent see [PRD.md](PRD.md); for build history see [ToDo.md](ToDo.md) and
 [docs/](docs/). This file reflects the live system as of 2026-08-20, on the
 `hf-gpu-worker` branch: the RunPod-based dispatch layer (Network Volumes, the

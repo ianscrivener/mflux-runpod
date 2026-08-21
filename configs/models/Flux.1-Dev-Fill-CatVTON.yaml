@@ -1,5 +1,5 @@
 model_object: Flux1InContextFill
-model_config: dev_fill_catvton
+model_config: dev_fill_npx gitnexus analyzessssssssss
 hf_model_name: black-forest-labs/FLUX.1-Fill-dev
 quants:
   - q3

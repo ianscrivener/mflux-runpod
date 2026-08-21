@@ -1,4 +1,8 @@
-# mflux-runpod
+# MFlux-Conv
+
+> Renamed from `mflux-runpod` -- the app moved off RunPod to a Hugging Face Spaces
+> GPU worker (see below), so the old name no longer fit. The repo directory and git
+> history keep the old name; only the app identity (frontend, docs, API title) changed.
 
 Services that convert and quantize AI models for [MFlux](https://pypi.org/project/mflux/)
 (its GitHub repo, mflux-community/mflux, was suspended by GitHub 2026-08-20 -- PyPI is
