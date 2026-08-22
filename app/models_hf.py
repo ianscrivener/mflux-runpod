@@ -22,6 +22,39 @@ DATA_PATH = Path(
 )
 HF_ORG = os.environ.get("HF_ORG", "mflux-community")
 
+# The smallest real quantized MFlux repo is many GB (even Q3 text-only
+# components run into the hundreds of MB) -- anything under this is a repo
+# whose build crashed or timed out after create_repo() but before the actual
+# weight upload, leaving just the auto-generated .gitattributes "initial
+# commit" behind. Confirmed live 2026-08-22: 5 repos stuck in exactly that
+# state (e.g. boogu-image-turbo-mflux-q6) were still counted as "published"
+# everywhere that only checked "does a repo with this name exist" -- the
+# Models page's green DONE pill and the HF model card preview's GB/URL table
+# both showed them as complete despite containing zero model weights.
+MIN_PUBLISHED_SIZE_GB = 0.05
+
+
+def is_actually_published(entry: dict) -> bool:
+    """True if a data-hf-sync/models_hf.json entry represents a repo that
+    genuinely has model weights uploaded, not just an empty create_repo()
+    stub left behind by a build that failed partway through. Consumers that
+    decide "is this quant done" (models_missing.compute_missing,
+    models_catalog.compute_available_models, app.model_card) should filter
+    through this rather than just checking repo-name existence -- see
+    MIN_PUBLISHED_SIZE_GB. get_published_hf_manifest() itself stays an exact,
+    unfiltered reconstruction of models_hf.json (useful for diagnosing
+    exactly this kind of broken repo), so this filter is applied by callers,
+    not baked into the manifest reader.
+
+    A missing/None size_gb (not the real scanner's output -- _model_entry()
+    always sets it -- but common in hand-written test fixtures) is treated
+    as "unknown" and trusted as published, not as evidence of a broken repo;
+    only a size the scanner actually recorded as near-zero counts."""
+    size_gb = entry.get("size_gb")
+    if size_gb is None:
+        return True
+    return size_gb >= MIN_PUBLISHED_SIZE_GB
+
 
 def _model_size_bytes(info) -> int:
     return sum(

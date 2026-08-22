@@ -1,13 +1,12 @@
 <script>
+  import { marked } from "marked";
   import { api } from "../api.js";
   import Modal from "../components/Modal.svelte";
 
   // ---------------------------------------------------------------------
-  // Design-only controls (status track, instance size, pause/start).
-  // Deliberately NOT wired to any backend yet -- mockState/mockHardware are
-  // local UI state only, so this section can be reviewed and iterated on
-  // before any /gpu/hardware or /gpu/pause|start endpoint exists. Wiring
-  // notes are left inline where a real call will eventually go.
+  // Status track + pause/start -- wired to GET/POST /gpu/status|pause|start.
+  // Instance-size selector below is still design-only (no backend endpoint
+  // to set the Space's hardware tier yet).
   // ---------------------------------------------------------------------
 
   const STATE_SEQUENCE = [
@@ -16,6 +15,15 @@
     { id: "idle", label: "Idle" },
     { id: "building", label: "Building" },
   ];
+
+  // SpaceStage values (huggingface_hub) bucketed into the 4 pills above --
+  // see docs/_HF_SPACE_COMMANDS.md. Error stages (CONFIG_ERROR etc) fall
+  // into "sleeping" too, since Start (restart_space) is the same recovery
+  // action for those as for a plain paused/asleep Space.
+  const SLEEPING_STAGES = new Set([
+    "PAUSED", "STOPPED", "NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR", "DELETING",
+  ]);
+  const STARTING_STAGES = new Set(["APP_STARTING", "BUILDING", "RUNNING_APP_STARTING", "RUNNING_BUILDING"]);
 
   // Real hardware tier ids from HF Spaces (huggingface_hub.SpaceHardware) --
   // this list will eventually come from list_spaces_hardware(), see
@@ -30,56 +38,63 @@
     { id: "a100-large", label: "A100 large" },
   ];
 
-  let mockState = $state("sleeping");
   let mockHardware = $state("a10g-large");
   let confirmAction = $state(null); // "pause" | "start" | null
+  let pauseStartBusy = $state(false);
+  let pauseStartError = $state(null);
 
-  const canStart = $derived(mockState === "sleeping");
-  const canPause = $derived(mockState === "idle" || mockState === "building");
+  // status.stage comes from GET /gpu/status (app.generate.worker_status --
+  // the Space's own SpaceStage) -- null until the first poll lands.
+  const currentStateId = $derived.by(() => {
+    const stage = status?.stage;
+    if (!stage) return null;
+    if (SLEEPING_STAGES.has(stage)) return "sleeping";
+    if (STARTING_STAGES.has(stage)) return "starting";
+    if (stage === "RUNNING") return status?.state === "building" ? "building" : "idle";
+    return null;
+  });
+
+  const canStart = $derived(currentStateId === "sleeping");
+  const canPause = $derived(currentStateId === "idle" || currentStateId === "building" || currentStateId === "starting");
 
   function requestConfirm(action) {
     confirmAction = action;
   }
 
-  function proceedConfirm() {
-    // TODO(backend): call POST /gpu/pause or /gpu/start (pause_space /
-    // restart_space, see docs/_HF_SPACE_COMMANDS.md) and reconcile mockState
-    // from the real response instead of simulating it locally.
-    if (confirmAction === "start") {
-      mockState = "starting";
-      setTimeout(() => { mockState = "idle"; }, 1500);
-    } else if (confirmAction === "pause") {
-      mockState = "sleeping";
-    }
+  async function proceedConfirm() {
+    const action = confirmAction;
     confirmAction = null;
+    pauseStartBusy = true;
+    pauseStartError = null;
+    try {
+      if (action === "start") {
+        await api.gpuStart();
+      } else if (action === "pause") {
+        await api.gpuPause();
+      }
+      await load();
+    } catch (e) {
+      pauseStartError = e.message;
+    } finally {
+      pauseStartBusy = false;
+    }
   }
 
   // ---------------------------------------------------------------------
-  // Live worker status -- already wired to GET /gpu/status.
+  // Live worker status -- GET /gpu/status. Only feeds the status-track pills
+  // (currentStateId, above) now -- the Worker state/Queue depth/Prefetching/
+  // Current job/Last result panels that used to render loading/error state
+  // for this were removed, so a fetch failure just leaves no pill lit
+  // rather than showing a separate message.
   // ---------------------------------------------------------------------
 
   let status = $state(null);
-  let loading = $state(true);
-  let error = $state(null);
-  let expected = $state(false);
 
   async function load() {
     try {
       status = await api.gpuStatus();
-      error = null;
-      expected = false;
-    } catch (e) {
-      // /gpu/status: 503 = HF_WORKER_URL not set on this deployment, 502 =
-      // configured but the worker didn't respond -- most commonly because
-      // its HF Space is asleep (it sleeps on idle and wakes on the next
-      // request, see docs/v0.2.0/hf-space-sleep-clears-cache.md) or still
-      // restarting. Both are expected/normal, not bugs, so shown as a
-      // status message rather than the red error pill.
-      expected = e.message.startsWith("503 ") || e.message.startsWith("502 ");
-      error = e.message;
+    } catch {
       status = null;
-    } finally {
-      loading = false;
     }
   }
 
@@ -87,13 +102,14 @@
   const poll = setInterval(load, 5000);
   $effect(() => () => clearInterval(poll));
 
-  const stateLabel = $derived(status?.state === "building" ? "Building" : status?.state === "idle" ? "Idle" : status?.state ?? "—");
-
   // ---------------------------------------------------------------------
   // Hardware tiers table -- GET /gpu/hardware (data-hf-sync/hf_hardware.json).
-  // Static specs/pricing, not part of the live-status poll above -- loaded once.
+  // Shown in the GPU-pricing modal (opened from the control card), not
+  // inline -- loaded once regardless of whether that modal's been opened
+  // yet, so it's ready the first time it is.
   // ---------------------------------------------------------------------
 
+  let pricingOpen = $state(false);
   let hardwareTiers = $state([]);
   let hardwareError = $state(null);
 
@@ -121,48 +137,167 @@
         return { ...t, gpu: m ? m[1] : "—", vram: m ? m[2] : "—" };
       })
   );
+
+  // ---------------------------------------------------------------------
+  // Model card template preview -- GET /models_hf/card_preview. Not GPU-
+  // related, just parked here for now (design/review stage) until it has a
+  // proper home.
+  // ---------------------------------------------------------------------
+
+  let cardPreviewOpen = $state(false);
+  let cardMarkdown = $state("");
+  let cardError = $state(null);
+  let cardLoading = $state(false);
+  let cardView = $state("markdown"); // "markdown" | "html"
+
+  const cardHtml = $derived(cardMarkdown ? marked.parse(cardMarkdown) : "");
+
+  async function openCardPreview() {
+    cardPreviewOpen = true;
+    cardView = "markdown";
+    cardError = null;
+    cardLoading = true;
+    try {
+      const res = await api.modelCardPreview();
+      cardMarkdown = res.markdown;
+    } catch (e) {
+      cardError = e.message;
+    } finally {
+      cardLoading = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Worker logs -- GET /gpu/logs/build and /gpu/logs/container. Loaded once
+  // on mount, each with its own refresh button (not polled -- these are
+  // pulled straight from the HF Space's own log buffer on every request,
+  // no reason to hit that repeatedly on a timer).
+  // ---------------------------------------------------------------------
+
+  let buildLogLines = $state([]);
+  let buildLogError = $state(null);
+  let buildLogLoading = $state(true);
+
+  let containerLogLines = $state([]);
+  let containerLogError = $state(null);
+  let containerLogLoading = $state(true);
+
+  async function loadBuildLogs() {
+    buildLogLoading = true;
+    buildLogError = null;
+    try {
+      const res = await api.gpuLogsBuild();
+      buildLogLines = res.lines ?? [];
+    } catch (e) {
+      buildLogError = e.message;
+    } finally {
+      buildLogLoading = false;
+    }
+  }
+
+  async function loadContainerLogs() {
+    containerLogLoading = true;
+    containerLogError = null;
+    try {
+      const res = await api.gpuLogsContainer();
+      containerLogLines = res.lines ?? [];
+    } catch (e) {
+      containerLogError = e.message;
+    } finally {
+      containerLogLoading = false;
+    }
+  }
+
+  loadBuildLogs();
+  loadContainerLogs();
 </script>
 
 <h2 style="margin-bottom:16px">GPU</h2>
 
-<div class="status-track card">
-  {#each STATE_SEQUENCE as s (s.id)}
-    <div class="status-step" class:current={s.id === mockState}>
-      <span class="status-dot"></span>
-      <span class="status-name">{s.label}</span>
+<div class="gpu-split">
+  <div class="col-left">
+    <div class="status-track card">
+      {#each STATE_SEQUENCE as s (s.id)}
+        <div class="status-step" class:current={s.id === currentStateId}>
+          <span class="status-dot"></span>
+          <span class="status-name">{s.label}</span>
+        </div>
+      {/each}
     </div>
-  {/each}
-</div>
-
-<div class="card control-card">
-  <div class="control-row">
-    <div>
-      <div class="gpu-card-label">Instance size</div>
-      <div class="gpu-card-value">{HARDWARE_TIERS.find((h) => h.id === mockHardware)?.label}</div>
-    </div>
-    <select bind:value={mockHardware}>
-      {#each HARDWARE_TIERS as h (h.id)}<option value={h.id}>{h.label}</option>{/each}
-    </select>
   </div>
 
-  <div class="control-row buttons-row">
-    <button class="danger" disabled={!canPause} onclick={() => requestConfirm("pause")}>Pause</button>
-    <button class="primary" disabled={!canStart} onclick={() => requestConfirm("start")}>Start</button>
+  <div class="col-right">
+    <div class="card control-card">
+      <div class="control-row">
+        <div>
+          <div class="gpu-card-label">Instance size</div>
+          <div class="gpu-card-value">{HARDWARE_TIERS.find((h) => h.id === mockHardware)?.label}</div>
+        </div>
+        <select bind:value={mockHardware}>
+          {#each HARDWARE_TIERS as h (h.id)}<option value={h.id}>{h.label}</option>{/each}
+        </select>
+      </div>
+
+      <div class="control-row buttons-row">
+        <button class="danger" disabled={!canPause || pauseStartBusy} onclick={() => requestConfirm("pause")}>Pause</button>
+        <button class="primary" disabled={!canStart || pauseStartBusy} onclick={() => requestConfirm("start")}>Start</button>
+      </div>
+
+      {#if pauseStartError}
+        <p class="pill danger">{pauseStartError}</p>
+      {/if}
+
+      <div class="control-footer">
+        <button type="button" class="pill accent pricing-pill" onclick={() => (pricingOpen = true)}>GPU pricing</button>
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px; margin: 6px 0 0">
+      Instance size selector above is still a design preview -- not wired to the backend yet.
+      Status track and Pause/Start are live.
+    </p>
   </div>
 </div>
 
-<p class="muted" style="font-size:11px; margin: 6px 0 20px">
-  Design preview — the status track, instance size, and pause/start controls above are not
-  wired to the backend yet.
-</p>
+{#if pricingOpen}
+  <Modal wide onclose={() => (pricingOpen = false)}>
+    <h2 style="margin-bottom:12px">HF Spaces hardware tiers</h2>
+    {#if hardwareError}
+      <p class="pill danger">{hardwareError}</p>
+    {:else if singleGpuTiers.length}
+      <table class="hw-table">
+        <thead>
+          <tr><th>Name</th><th>Tier</th><th>CPU</th><th>RAM</th><th>GPU</th><th>VRAM</th><th>Cost/min</th><th>Cost/hour</th></tr>
+        </thead>
+        <tbody>
+          {#each singleGpuTiers as t (t.name)}
+            <tr class:current-tier={t.name === mockHardware}>
+              <td class="mono">{t.name}</td>
+              <td>{t["pretty name"]}</td>
+              <td>{t.cpu}</td>
+              <td>{t.ram}</td>
+              <td>{t.gpu}</td>
+              <td>{t.vram}</td>
+              <td>{t["cost/min"]}</td>
+              <td>{t["cost/hour"]}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="faint">Loading…</p>
+    {/if}
+  </Modal>
+{/if}
 
 {#if confirmAction === "pause"}
   <Modal onclose={() => (confirmAction = null)}>
     <h2 style="margin-bottom:8px">Pause the GPU worker?</h2>
     <p>
-      This puts the Hugging Face Space to sleep. Any in-progress build will be interrupted, and
-      the Space's local disk cache (downloaded source weights) will be cleared on next wake --
-      see <code>docs/v0.2.0/hf-space-sleep-clears-cache.md</code>.
+      This explicitly pauses the Hugging Face Space (not billed while paused). Any in-progress
+      build will be interrupted, and the Space's local disk cache (downloaded source weights)
+      will be cleared on the next Start -- see <code>docs/v0.2.0/hf-space-sleep-clears-cache.md</code>.
+      Only Start (restart) brings a paused Space back.
     </p>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
       <button onclick={() => (confirmAction = null)}>Cancel</button>
@@ -183,107 +318,231 @@
   </Modal>
 {/if}
 
-{#if loading}
-  <p class="muted">Loading…</p>
-{:else if expected}
-  <p class="pill warn">{error}</p>
-{:else if error}
-  <p class="pill danger">{error}</p>
-{:else if status}
-  <div class="gpu-grid">
-    <div class="card gpu-card">
-      <div class="gpu-card-label">Worker state</div>
-      <div class="gpu-card-value">
-        <span class="pill" class:success={status.state === "building"} class:accent={status.state === "idle"}>
-          {stateLabel}
-        </span>
+<div class="logs-split">
+  <div class="col-left">
+    <div class="card logs-card">
+      <div class="logs-header">
+        <h3>Build logs</h3>
+        <button type="button" class="link-button" disabled={buildLogLoading} onclick={loadBuildLogs}>
+          {buildLogLoading ? "Loading…" : "Refresh"}
+        </button>
       </div>
-    </div>
-
-    <div class="card gpu-card">
-      <div class="gpu-card-label">Queue depth</div>
-      <div class="gpu-card-value"><span class="hero-value">{status.queue_depth ?? 0}</span></div>
-    </div>
-
-    <div class="card gpu-card">
-      <div class="gpu-card-label">Prefetching</div>
-      <div class="gpu-card-value">
-        {#if status.prefetching?.length}
-          {#each status.prefetching as name}<span class="pill accent" style="margin:0 4px 4px 0">{name}</span>{/each}
+      <div class="log-window">
+        {#if buildLogLoading && !buildLogLines.length}
+          <p class="muted">Loading…</p>
+        {:else if buildLogError}
+          <p class="pill danger">{buildLogError}</p>
+        {:else if buildLogLines.length}
+          <pre class="log-lines">{buildLogLines.join("\n")}</pre>
         {:else}
-          <span class="faint">none</span>
+          <p class="faint">No build log lines.</p>
         {/if}
       </div>
     </div>
   </div>
 
-  <div class="card" style="margin-top:16px; padding:16px">
-    <h3 style="font-size:13px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); margin-bottom:10px">
-      Current job
-    </h3>
-    {#if status.current}
-      <table>
-        <tbody>
-          <tr><td class="muted">Model</td><td>{status.current.config_stem ?? "—"}</td></tr>
-          <tr><td class="muted">Quant</td><td>{status.current.quant ?? "—"}</td></tr>
-          <tr><td class="muted">Run</td><td>{status.current.run_id ?? "—"}</td></tr>
-        </tbody>
-      </table>
-    {:else}
-      <p class="faint" style="margin:0">No build in progress.</p>
-    {/if}
+  <div class="col-right">
+    <div class="card logs-card">
+      <div class="logs-header">
+        <h3>Container logs</h3>
+        <button type="button" class="link-button" disabled={containerLogLoading} onclick={loadContainerLogs}>
+          {containerLogLoading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+      <div class="log-window">
+        {#if containerLogLoading && !containerLogLines.length}
+          <p class="muted">Loading…</p>
+        {:else if containerLogError}
+          <p class="pill danger">{containerLogError}</p>
+        {:else if containerLogLines.length}
+          <pre class="log-lines">{containerLogLines.join("\n")}</pre>
+        {:else}
+          <p class="faint">No container log lines.</p>
+        {/if}
+      </div>
+    </div>
   </div>
-
-  <div class="card" style="margin-top:16px; padding:16px">
-    <h3 style="font-size:13px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); margin-bottom:10px">
-      Last result
-    </h3>
-    {#if status.last_result}
-      <table>
-        <tbody>
-          {#each Object.entries(status.last_result) as [k, v]}
-            <tr><td class="muted">{k}</td><td>{v === null || v === undefined ? "—" : String(v)}</td></tr>
-          {/each}
-        </tbody>
-      </table>
-    {:else}
-      <p class="faint" style="margin:0">No completed builds yet this session.</p>
-    {/if}
-  </div>
-{/if}
-
-<div class="card scroll-x hw-card" style="margin-top:16px">
-  <h3 style="font-size:13px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); padding:16px 16px 0">
-    HF Spaces hardware tiers
-  </h3>
-  {#if hardwareError}
-    <p class="pill danger" style="margin:16px">{hardwareError}</p>
-  {:else if singleGpuTiers.length}
-    <table class="hw-table">
-      <thead>
-        <tr><th>Name</th><th>Tier</th><th>CPU</th><th>RAM</th><th>GPU</th><th>VRAM</th><th>Cost/min</th><th>Cost/hour</th></tr>
-      </thead>
-      <tbody>
-        {#each singleGpuTiers as t (t.name)}
-          <tr class:current-tier={t.name === mockHardware}>
-            <td class="mono">{t.name}</td>
-            <td>{t["pretty name"]}</td>
-            <td>{t.cpu}</td>
-            <td>{t.ram}</td>
-            <td>{t.gpu}</td>
-            <td>{t.vram}</td>
-            <td>{t["cost/min"]}</td>
-            <td>{t["cost/hour"]}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {:else}
-    <p class="faint" style="margin:16px">Loading…</p>
-  {/if}
 </div>
 
+<p style="margin-top:24px">
+  <button type="button" class="link-button" onclick={openCardPreview}>Preview HF model card template →</button>
+</p>
+
+{#if cardPreviewOpen}
+  <Modal wide onclose={() => (cardPreviewOpen = false)}>
+    <h2 style="margin-bottom:12px">HF model card template preview</h2>
+
+    <div class="view-toggle">
+      <button type="button" class="pill" class:accent={cardView === "markdown"} onclick={() => (cardView = "markdown")}>
+        Markdown
+      </button>
+      <button type="button" class="pill" class:accent={cardView === "html"} onclick={() => (cardView = "html")}>
+        HTML
+      </button>
+    </div>
+
+    {#if cardLoading}
+      <p class="muted">Loading…</p>
+    {:else if cardError}
+      <p class="pill danger">{cardError}</p>
+    {:else if cardView === "markdown"}
+      <pre class="card-markdown">{cardMarkdown}</pre>
+    {:else}
+      <div class="card-html">{@html cardHtml}</div>
+    {/if}
+  </Modal>
+{/if}
+
 <style>
+  .logs-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 32px;
+  }
+
+  .logs-card {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    min-width: 0;
+  }
+
+  .logs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .logs-header h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .logs-header .link-button:disabled {
+    color: var(--muted);
+    cursor: wait;
+  }
+
+  .log-window {
+    height: 1200px;
+    overflow-y: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .log-lines {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .link-button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .link-button:hover {
+    text-decoration: underline;
+  }
+
+  .card-markdown {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 0;
+  }
+
+  .view-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .view-toggle .pill {
+    cursor: pointer;
+  }
+
+  .card-html {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+
+  .card-html :global(table) {
+    border-collapse: collapse;
+    margin: 12px 0;
+  }
+
+  .card-html :global(td),
+  .card-html :global(th) {
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    white-space: nowrap;
+  }
+
+  /* marked() emits the deprecated align="center" attribute for markdown's
+     :--: column syntax -- app.css's global `td { text-align: left; }` beats
+     that presentational attribute on specificity, so it has to be overridden
+     explicitly here rather than relying on align= alone. */
+  .card-html :global(td[align="center"]),
+  .card-html :global(th[align="center"]) {
+    text-align: center;
+  }
+
+  .card-html :global(a) {
+    color: var(--accent);
+  }
+
+  .card-html :global(pre) {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+  }
+
+  .card-html :global(code) {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  .gpu-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+    margin-bottom: 16px;
+  }
+
+  .col-left,
+  .col-right {
+    min-width: 0;
+  }
+
   .status-track {
     display: flex;
     gap: 8px;
@@ -359,6 +618,15 @@
     min-width: 100px;
   }
 
+  .control-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .pricing-pill {
+    cursor: pointer;
+  }
+
   .current-tier td {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
@@ -367,23 +635,8 @@
     box-shadow: inset 3px 0 var(--accent);
   }
 
-  .hw-card {
-    max-width: 640px;
-    width: fit-content;
-  }
-
   .hw-table {
     font-size: 80%;
-  }
-
-  .gpu-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 14px;
-  }
-
-  .gpu-card {
-    padding: 16px;
   }
 
   .gpu-card-label {
@@ -396,12 +649,6 @@
 
   .gpu-card-value {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
-  }
-
-  .hero-value {
-    font-size: 28px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
   }
 
   table:not(.hw-table) td {

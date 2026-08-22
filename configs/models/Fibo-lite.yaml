@@ -1,5 +1,6 @@
 model_object: FIBO
 model_config: fibo_lite
+model_cli_generate_command: mflux-generate-fibo
 hf_model_name: briaai/Fibo-lite
 quants:
   - q3

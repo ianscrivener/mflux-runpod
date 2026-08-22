@@ -1,5 +1,6 @@
 model_object: Krea2
 model_config: krea2_raw
+model_cli_generate_command: mflux-generate-krea2
 hf_model_name: krea/Krea-2-Raw
 quants:
   - q3

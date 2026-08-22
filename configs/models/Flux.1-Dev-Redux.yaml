@@ -1,5 +1,6 @@
 model_object: Flux1Redux
 model_config: dev_redux
+model_cli_generate_command: mflux-generate-redux
 hf_model_name: black-forest-labs/FLUX.1-Redux-dev
 quants:
   - q3

@@ -166,7 +166,11 @@ def compute_missing(
     force_exclude = set(overrides.get("force_exclude") or [])
     skipped_models = (skip_rules or {}).get("models", set())
 
-    published = {m["model_name"] for m in hf_manifest.get("hf_models", [])}
+    from app.models_hf import is_actually_published
+
+    published = {
+        m["model_name"] for m in hf_manifest.get("hf_models", []) if is_actually_published(m)
+    }
 
     missing: dict[str, dict] = {}
     complete: list[str] = []

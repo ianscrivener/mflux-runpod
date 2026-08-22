@@ -1,5 +1,6 @@
 model_object: QwenImage
 model_config: qwen_image
+model_cli_generate_command: mflux-generate-qwen
 hf_model_name: Qwen/Qwen-Image-2512
 quants:
   - q3

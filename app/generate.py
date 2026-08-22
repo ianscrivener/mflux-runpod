@@ -179,13 +179,39 @@ def dispatch_trigger(model_series: str, run_id: int, plan: dict) -> dict:
     return {"dispatched": True, "run_id": run_id, "jobs": queued}
 
 
+# Space stages (huggingface_hub's SpaceStage) where the container isn't
+# actually serving HTTP yet -- hitting /status against one of these would
+# just time out into a 502 after several seconds for no new information, so
+# worker_status() returns the stage directly instead of attempting it.
+_SPACE_NOT_SERVING_STAGES = {
+    "STOPPED",
+    "PAUSED",
+    "BUILDING",
+    "APP_STARTING",
+    "NO_APP_FILE",
+    "CONFIG_ERROR",
+    "BUILD_ERROR",
+    "RUNTIME_ERROR",
+    "DELETING",
+}
+
+
 def worker_status() -> dict:
     """GET the HF Spaces GPU worker's /status: current build state, queue
-    depth, and in-flight prefetches (see docker-runner-hf/worker.py). Same
-    HF_WORKER_URL/auth requirements as dispatch_trigger -- raises
-    DispatchConfigError if HF_WORKER_URL isn't set, and lets httpx errors
-    (worker unreachable, e.g. its Space is asleep/restarting) propagate as-is
-    so the caller can tell "not configured" from "configured but down"."""
+    depth, and in-flight prefetches (see docker-runner-hf/worker.py), plus
+    the underlying Space's own runtime stage (SpaceStage -- RUNNING, PAUSED,
+    STOPPED/asleep, APP_STARTING, etc, see docs/_HF_SPACE_COMMANDS.md) under
+    "stage". Same HF_WORKER_URL/auth requirements as dispatch_trigger --
+    raises DispatchConfigError if HF_WORKER_URL isn't set, and lets httpx
+    errors (worker unreachable, e.g. its Space is asleep/restarting)
+    propagate as-is so the caller can tell "not configured" from
+    "configured but down".
+
+    The stage lookup is best-effort: without HF_TOKEN, or if the lookup
+    itself fails, this falls straight through to the plain HTTP /status call
+    exactly as before "stage" existed -- pause_worker/start_worker still
+    need HF_TOKEN regardless, this just degrades gracefully rather than
+    turning a working status poll into a new failure mode."""
     import os
 
     import httpx
@@ -198,6 +224,25 @@ def worker_status() -> dict:
         )
 
     hf_token = os.environ.get("HF_TOKEN")
+    stage = None
+    if hf_token:
+        from huggingface_hub import HfApi
+
+        try:
+            stage = HfApi(token=hf_token).get_space_runtime(_space_id()).stage
+        except httpx.HTTPError:
+            pass
+
+    if stage in _SPACE_NOT_SERVING_STAGES:
+        return {
+            "stage": stage,
+            "state": None,
+            "queue_depth": None,
+            "prefetching": [],
+            "current": None,
+            "last_result": None,
+        }
+
     headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
     worker_key = os.environ.get("WORKER_API_KEY")
     if worker_key:
@@ -206,7 +251,86 @@ def worker_status() -> dict:
     with httpx.Client(timeout=15.0) as client:
         response = client.get(f"{worker_url.rstrip('/')}/status", headers=headers)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        result["stage"] = stage
+        return result
+
+
+# The Space this worker runs on -- distinct from HF_WORKER_URL (its runtime
+# *.hf.space URL, used above for /build and /status) and from
+# app.outbox.DEFAULT_BUCKET_ID (its companion Persistent Storage bucket, a
+# separate HF repo). Overridable via HF_SPACE_ID per the project's existing
+# pattern (see app.outbox.OUTBOX_BUCKET_ID) rather than derived from
+# HF_WORKER_URL's hostname, which isn't reliably reversible for orgs whose
+# name itself contains a hyphen.
+DEFAULT_SPACE_ID = "cleverheart2026/mflux-model-gpu-runner"
+
+
+def _space_id() -> str:
+    import os
+
+    return os.environ.get("HF_SPACE_ID", DEFAULT_SPACE_ID)
+
+
+def _require_hf_token() -> str:
+    import os
+
+    hf_token = os.environ.get("HF_TOKEN")
+    if not hf_token:
+        raise DispatchConfigError(
+            "this action requires HF_TOKEN (the credential used to manage "
+            "the GPU worker's own HF Space) in the Orchestrator's "
+            "environment, but it's not set."
+        )
+    return hf_token
+
+
+def pause_worker() -> dict:
+    """Pause the GPU worker's underlying HF Space (huggingface_hub's
+    pause_space -- see docs/_HF_SPACE_COMMANDS.md). Distinct from the
+    automatic "sleep" a free/idle Space enters on its own: pause is
+    explicit and stays paused until start_worker() (restart_space) brings
+    it back. Either way, per docs/v0.2.0/hf-space-sleep-clears-cache.md,
+    resuming means a full container rebuild -- local disk (including the
+    HF Hub download cache) does not survive."""
+    from huggingface_hub import HfApi
+
+    hf_token = _require_hf_token()
+    runtime = HfApi(token=hf_token).pause_space(_space_id())
+    return {"stage": runtime.stage, "hardware": runtime.hardware}
+
+
+def start_worker() -> dict:
+    """Bring the GPU worker's HF Space back up (huggingface_hub's
+    restart_space -- the same call whether the Space is currently paused,
+    asleep, or just needs a fresh build; restart_space is documented as
+    "the only way to programmatically restart a Space if you've put it on
+    Pause", see docs/_HF_SPACE_COMMANDS.md)."""
+    from huggingface_hub import HfApi
+
+    hf_token = _require_hf_token()
+    runtime = HfApi(token=hf_token).restart_space(_space_id())
+    return {"stage": runtime.stage, "hardware": runtime.hardware}
+
+
+# fetch_space_logs(..., follow=False) is non-blocking and returns whatever's
+# currently buffered server-side (same as `docker logs`, not `docker logs
+# -f`) -- fine for a plain request/response GET, no streaming/SSE needed on
+# this side. Capped rather than returned in full: HF buffers a long scrollback
+# for a long-running Space, and the frontend only ever shows the tail of it.
+MAX_LOG_LINES = 500
+
+
+def fetch_worker_logs(build: bool) -> dict:
+    """Fetch the GPU worker Space's build logs (build=True, the container
+    image build -- useful when it's stuck in BUILD_ERROR) or run logs
+    (build=False, the running app's stdout/stderr -- see
+    docker-runner-hf/worker.py). Same HF_TOKEN requirement as pause/start."""
+    from huggingface_hub import HfApi
+
+    hf_token = _require_hf_token()
+    lines = list(HfApi(token=hf_token).fetch_space_logs(_space_id(), build=build, follow=False))
+    return {"lines": [line.rstrip("\n") for line in lines[-MAX_LOG_LINES:]]}
 
 
 def cancel_run(run_id: int) -> dict:

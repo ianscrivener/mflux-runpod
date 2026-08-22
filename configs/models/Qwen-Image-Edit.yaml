@@ -1,5 +1,6 @@
 model_object: QwenImageEdit
 model_config: qwen_image_edit
+model_cli_generate_command: mflux-generate-qwen-edit
 hf_model_name: Qwen/Qwen-Image-Edit-2509
 quants:
   - q3

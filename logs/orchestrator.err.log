@@ -18,3 +18,13 @@ INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
 INFO:     Finished server process [90429]
+error: Failed to spawn: `uvicorn`
+  Caused by: No such file or directory (os error 2)
+error: Failed to spawn: `uvicorn`
+  Caused by: No such file or directory (os error 2)
+error: Failed to spawn: `uvicorn`
+  Caused by: No such file or directory (os error 2)
+error: Failed to spawn: `uvicorn`
+  Caused by: No such file or directory (os error 2)
+error: Failed to spawn: `uvicorn`
+  Caused by: No such file or directory (os error 2)

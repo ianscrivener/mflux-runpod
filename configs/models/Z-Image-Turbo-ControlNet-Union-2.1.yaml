@@ -1,5 +1,6 @@
 model_object: ZImageTurboControlnet
 model_config: z_image_turbo_controlnet_union_2_1
+model_cli_generate_command: mflux-generate-z-image-controlnet
 hf_model_name: Tongyi-MAI/Z-Image-Turbo
 quants:
   - q3

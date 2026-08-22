@@ -1,5 +1,6 @@
 model_object: Flux1Fill
 model_config: dev_fill
+model_cli_generate_command: mflux-generate-fill
 hf_model_name: black-forest-labs/FLUX.1-Fill-dev
 quants:
   - q3

@@ -1,5 +1,6 @@
 model_object: QwenImage
 model_config: qwen_image_layered
+model_cli_generate_command: mflux-generate-qwen-layered
 hf_model_name: Qwen/Qwen-Image-Layered
 quants:
   - q3

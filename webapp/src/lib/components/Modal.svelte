@@ -1,5 +1,5 @@
 <script>
-  let { onclose, children } = $props();
+  let { onclose, children, wide = false } = $props();
 
   let panelEl = $state();
   let labelledBy = $state(undefined);
@@ -63,6 +63,7 @@
   <div
     bind:this={panelEl}
     class="modal-panel card"
+    class:wide
     onclick={(e) => e.stopPropagation()}
     role="dialog"
     aria-modal="true"
@@ -95,6 +96,11 @@
     overflow-y: auto;
     padding: 24px;
     position: relative;
+  }
+
+  .modal-panel.wide {
+    max-width: 900px;
+    max-height: 88vh;
   }
 
   .modal-close {

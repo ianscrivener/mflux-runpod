@@ -1,5 +1,6 @@
 model_object: BooguImage
 model_config: boogu_image_turbo
+model_cli_generate_command: mflux-generate-boogu
 hf_model_name: Boogu/Boogu-Image-0.1-Turbo
 quants:
   - q3

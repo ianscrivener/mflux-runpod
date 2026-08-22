@@ -1,5 +1,6 @@
 model_object: SeedVR2
 model_config: seedvr2_3b
+model_cli_generate_command: mflux-upscale-seedvr2
 hf_model_name: numz/SeedVR2_comfyUI
 quants:
   - q3

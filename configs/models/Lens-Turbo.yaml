@@ -1,5 +1,6 @@
 model_object: LensImage
 model_config: lens_turbo
+model_cli_generate_command: mflux-generate-lens
 hf_model_name: Comfy-Org/Lens
 quants:
   - q3

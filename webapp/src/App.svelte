@@ -1,6 +1,5 @@
 <script>
   import { api } from "./lib/api.js";
-  import SummaryView from "./lib/views/SummaryView.svelte";
   import ModelsView from "./lib/views/ModelsView.svelte";
   import QueueView from "./lib/views/QueueView.svelte";
   import RunsView from "./lib/views/RunsView.svelte";
@@ -8,7 +7,6 @@
   import DatasetsView from "./lib/views/DatasetsView.svelte";
 
   const NAV_TABS = [
-    { id: "summary", label: "Summary", component: SummaryView },
     { id: "models", label: "Models", component: ModelsView },
     { id: "queue", label: "Queue", component: QueueView },
     { id: "runs", label: "Generate", component: RunsView },
@@ -19,7 +17,7 @@
 
   const TABS = [...NAV_TABS, ...ADMIN_TABS];
 
-  let active = $state("summary");
+  let active = $state("models");
   let online = $state(true);
   let adminOpen = $state(false);
 

@@ -1,5 +1,6 @@
 model_object: Flux1Depth
 model_config: dev_depth
+model_cli_generate_command: mflux-generate-depth
 hf_model_name: black-forest-labs/FLUX.1-Depth-dev
 quants:
   - q3

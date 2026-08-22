@@ -1,5 +1,6 @@
 model_object: Flux2Klein
 model_config: flux2_klein_9b
+model_cli_generate_command: mflux-generate-flux2
 hf_model_name: black-forest-labs/FLUX.2-klein-9B
 quants:
   - q3

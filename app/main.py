@@ -237,6 +237,16 @@ def models_hf_update():
     return update_models_hf()
 
 
+@app.get("/models_hf/card_preview")
+def models_hf_card_preview():
+    from app.model_card import render_sample_model_card
+
+    try:
+        return {"markdown": render_sample_model_card()}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/models_missing")
 def models_missing():
     from app.models_catalog import get_published_hf_manifest
@@ -550,6 +560,58 @@ def gpu_status():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"worker unreachable: {exc}") from exc
+
+
+@app.post("/gpu/pause", summary="Pause the GPU worker's HF Space")
+def gpu_pause():
+    from app.generate import DispatchConfigError, pause_worker
+    import httpx
+
+    try:
+        return pause_worker()
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"pause failed: {exc}") from exc
+
+
+@app.post("/gpu/start", summary="Restart/resume the GPU worker's HF Space")
+def gpu_start():
+    from app.generate import DispatchConfigError, start_worker
+    import httpx
+
+    try:
+        return start_worker()
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"start failed: {exc}") from exc
+
+
+@app.get("/gpu/logs/build", summary="GPU worker Space's container build logs")
+def gpu_logs_build():
+    from app.generate import DispatchConfigError, fetch_worker_logs
+    import httpx
+
+    try:
+        return fetch_worker_logs(build=True)
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"fetching build logs failed: {exc}") from exc
+
+
+@app.get("/gpu/logs/container", summary="GPU worker Space's running-container stdout/stderr")
+def gpu_logs_container():
+    from app.generate import DispatchConfigError, fetch_worker_logs
+    import httpx
+
+    try:
+        return fetch_worker_logs(build=False)
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"fetching container logs failed: {exc}") from exc
 
 
 @app.get("/gpu/hardware", summary="HF Spaces hardware tiers: specs + pricing (data-hf-sync/hf_hardware.json)")

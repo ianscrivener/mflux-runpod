@@ -584,9 +584,12 @@ def compute_available_models(
     2026-08-20 by diffing against compute_missing()'s published-quant
     classification for all 21 tracked configs before landing this two-pass
     version."""
+    from app.models_hf import is_actually_published
     from app.models_missing import DEFAULT_QUANTS, HF_ORG, slugify
 
-    published = {m["model_name"] for m in hf_manifest.get("hf_models", [])}
+    published = {
+        m["model_name"] for m in hf_manifest.get("hf_models", []) if is_actually_published(m)
+    }
 
     skipped_families = skip_rules.get("families", set())
     skipped_sub_families = skip_rules.get("sub_families", set())
