@@ -75,6 +75,7 @@ export const api = {
   gpuHardware: () => get("/gpu/hardware"),
   gpuPause: () => post("/gpu/pause"),
   gpuStart: () => post("/gpu/start"),
+  gpuSetHardware: (hardware) => post("/gpu/hardware", { hardware }),
   gpuLogsBuild: () => get("/gpu/logs/build"),
   gpuLogsContainer: () => get("/gpu/logs/container"),
   modelCardPreview: () => get("/models_hf/card_preview"),

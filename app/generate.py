@@ -66,6 +66,30 @@ class InvalidQuantsError(ValueError):
 VALID_QUANTS = {"q3", "q4", "q5", "q6", "q8", "bf16"}
 
 
+class InvalidHardwareError(ValueError):
+    """Raised when a caller-supplied hardware tier id isn't one of HF Spaces'
+    real tier names (huggingface_hub.SpaceHardware) -- same fail-fast intent
+    as InvalidQuantsError, but here the stakes are higher: request_space_hardware
+    restarts the Space, so a typo'd tier should never even reach that call."""
+
+    pass
+
+
+# Mirrors huggingface_hub.SpaceHardware's values exactly (confirmed live
+# 2026-08-22) -- also the same 17 tier names in data-hf-sync/hf_hardware.json's
+# "name" field. Spelled out here rather than importing SpaceHardware so this
+# module doesn't need huggingface_hub at import time (matching the existing
+# lazy-import pattern used for pause_worker/start_worker/etc, below).
+VALID_HARDWARE_TIERS = {
+    "cpu-basic", "cpu-upgrade", "zero-a10g",
+    "t4-small", "t4-medium",
+    "l4x1", "l4x4",
+    "l40sx1", "l40sx4", "l40sx8",
+    "a10g-small", "a10g-large", "a10g-largex2", "a10g-largex4",
+    "a100-large", "a100x4", "a100x8",
+}
+
+
 def resolve_generate_config(
     model_stem: str,
     quants: list[str] | None = None,
@@ -201,7 +225,10 @@ def worker_status() -> dict:
     depth, and in-flight prefetches (see docker-runner-hf/worker.py), plus
     the underlying Space's own runtime stage (SpaceStage -- RUNNING, PAUSED,
     STOPPED/asleep, APP_STARTING, etc, see docs/_HF_SPACE_COMMANDS.md) under
-    "stage". Same HF_WORKER_URL/auth requirements as dispatch_trigger --
+    "stage" and its current hardware tier (SpaceHardware, e.g. "a10g-large")
+    under "hardware" -- lets the frontend's instance-size selector show what
+    tier is actually running, not just what was last requested. Same
+    HF_WORKER_URL/auth requirements as dispatch_trigger --
     raises DispatchConfigError if HF_WORKER_URL isn't set, and lets httpx
     errors (worker unreachable, e.g. its Space is asleep/restarting)
     propagate as-is so the caller can tell "not configured" from
@@ -225,17 +252,21 @@ def worker_status() -> dict:
 
     hf_token = os.environ.get("HF_TOKEN")
     stage = None
+    hardware = None
     if hf_token:
         from huggingface_hub import HfApi
 
         try:
-            stage = HfApi(token=hf_token).get_space_runtime(_space_id()).stage
+            runtime = HfApi(token=hf_token).get_space_runtime(_space_id())
+            stage = runtime.stage
+            hardware = runtime.hardware
         except httpx.HTTPError:
             pass
 
     if stage in _SPACE_NOT_SERVING_STAGES:
         return {
             "stage": stage,
+            "hardware": hardware,
             "state": None,
             "queue_depth": None,
             "prefetching": [],
@@ -253,6 +284,7 @@ def worker_status() -> dict:
         response.raise_for_status()
         result = response.json()
         result["stage"] = stage
+        result["hardware"] = hardware
         return result
 
 
@@ -310,6 +342,25 @@ def start_worker() -> dict:
 
     hf_token = _require_hf_token()
     runtime = HfApi(token=hf_token).restart_space(_space_id())
+    return {"stage": runtime.stage, "hardware": runtime.hardware}
+
+
+def set_worker_hardware(hardware: str) -> dict:
+    """Change the GPU worker's HF Space hardware tier (huggingface_hub's
+    request_space_hardware -- see docs/_HF_SPACE_COMMANDS.md). Requesting a
+    new tier RESTARTS the Space to apply it (same container-rebuild/cache-
+    loss caveat as pause_worker/start_worker, see
+    docs/v0.2.0/hf-space-sleep-clears-cache.md) -- callers must only call
+    this when nothing is currently building on the worker."""
+    from huggingface_hub import HfApi
+
+    if hardware not in VALID_HARDWARE_TIERS:
+        raise InvalidHardwareError(
+            f"invalid hardware tier {hardware!r} -- must be one of {sorted(VALID_HARDWARE_TIERS)}"
+        )
+
+    hf_token = _require_hf_token()
+    runtime = HfApi(token=hf_token).request_space_hardware(_space_id(), hardware=hardware)
     return {"stage": runtime.stage, "hardware": runtime.hardware}
 
 

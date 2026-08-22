@@ -1,12 +1,12 @@
 <script>
+  import DOMPurify from "dompurify";
   import { marked } from "marked";
   import { api } from "../api.js";
   import Modal from "../components/Modal.svelte";
 
   // ---------------------------------------------------------------------
-  // Status track + pause/start -- wired to GET/POST /gpu/status|pause|start.
-  // Instance-size selector below is still design-only (no backend endpoint
-  // to set the Space's hardware tier yet).
+  // Status track + pause/start/instance-size -- wired to GET/POST
+  // /gpu/status|pause|start|hardware.
   // ---------------------------------------------------------------------
 
   const STATE_SEQUENCE = [
@@ -25,23 +25,37 @@
   ]);
   const STARTING_STAGES = new Set(["APP_STARTING", "BUILDING", "RUNNING_APP_STARTING", "RUNNING_BUILDING"]);
 
-  // Real hardware tier ids from HF Spaces (huggingface_hub.SpaceHardware) --
-  // this list will eventually come from list_spaces_hardware(), see
-  // docs/_HF_SPACE_COMMANDS.md.
-  const HARDWARE_TIERS = [
-    { id: "cpu-basic", label: "CPU basic (free)" },
-    { id: "t4-small", label: "T4 small" },
-    { id: "t4-medium", label: "T4 medium" },
-    { id: "l4x1", label: "L4 x1" },
-    { id: "a10g-small", label: "A10G small" },
-    { id: "a10g-large", label: "A10G large" },
-    { id: "a100-large", label: "A100 large" },
-  ];
-
-  let mockHardware = $state("a10g-large");
-  let confirmAction = $state(null); // "pause" | "start" | null
+  // Instance-size selector's options come from singleGpuTiers (below, backed
+  // by GET /gpu/hardware -- data-hf-sync/hf_hardware.json) rather than a
+  // separate curated list, so it can never drift out of sync with the
+  // pricing table shown in the GPU-pricing modal.
+  let selectedHardware = $state(null);
+  let confirmAction = $state(null); // "pause" | "start" | "hardware" | null
   let pauseStartBusy = $state(false);
   let pauseStartError = $state(null);
+  let hardwareApplyBusy = $state(false);
+  let hardwareApplyError = $state(null);
+
+  // Seed the selector from the Space's actual current tier the first time
+  // GET /gpu/status reports one -- only once (guarded by selectedHardware
+  // still being null), so it doesn't stomp on a tier the user has already
+  // picked but not applied yet.
+  $effect(() => {
+    if (selectedHardware === null && status?.hardware) {
+      selectedHardware = status.hardware;
+    }
+  });
+
+  // Changing hardware tier restarts the Space (request_space_hardware, see
+  // docs/_HF_SPACE_COMMANDS.md) -- same build-interrupting consequence as
+  // Pause, so Apply is blocked outright while a build is in progress, not
+  // just gated behind the confirm dialog's wording.
+  const canApplyHardware = $derived(
+    !!selectedHardware &&
+    selectedHardware !== status?.hardware &&
+    status?.state !== "building" &&
+    !hardwareApplyBusy
+  );
 
   // status.stage comes from GET /gpu/status (app.generate.worker_status --
   // the Space's own SpaceStage) -- null until the first poll lands.
@@ -64,6 +78,21 @@
   async function proceedConfirm() {
     const action = confirmAction;
     confirmAction = null;
+
+    if (action === "hardware") {
+      hardwareApplyBusy = true;
+      hardwareApplyError = null;
+      try {
+        await api.gpuSetHardware(selectedHardware);
+        await load();
+      } catch (e) {
+        hardwareApplyError = e.message;
+      } finally {
+        hardwareApplyBusy = false;
+      }
+      return;
+    }
+
     pauseStartBusy = true;
     pauseStartError = null;
     try {
@@ -150,7 +179,11 @@
   let cardLoading = $state(false);
   let cardView = $state("markdown"); // "markdown" | "html"
 
-  const cardHtml = $derived(cardMarkdown ? marked.parse(cardMarkdown) : "");
+  // Rendered via {@html} below -- sanitized even though cardMarkdown's
+  // source fields (model/repo names, MFlux CLI names) come from this
+  // project's own configs/models/*.yaml and HF org scan, not arbitrary
+  // user input; defense-in-depth for a value that reaches {@html} at all.
+  const cardHtml = $derived(cardMarkdown ? DOMPurify.sanitize(marked.parse(cardMarkdown)) : "");
 
   async function openCardPreview() {
     cardPreviewOpen = true;
@@ -224,6 +257,10 @@
         </div>
       {/each}
     </div>
+
+    <p style="margin-top:16px">
+      <button type="button" class="link-button" onclick={openCardPreview}>Preview HF model card template →</button>
+    </p>
   </div>
 
   <div class="col-right">
@@ -231,31 +268,33 @@
       <div class="control-row">
         <div>
           <div class="gpu-card-label">Instance size</div>
-          <div class="gpu-card-value">{HARDWARE_TIERS.find((h) => h.id === mockHardware)?.label}</div>
+          <div class="gpu-card-value">
+            {singleGpuTiers.find((t) => t.name === selectedHardware)?.["pretty name"] ?? selectedHardware ?? "—"}
+          </div>
         </div>
-        <select bind:value={mockHardware}>
-          {#each HARDWARE_TIERS as h (h.id)}<option value={h.id}>{h.label}</option>{/each}
-        </select>
+        <div class="hardware-controls">
+          <select bind:value={selectedHardware}>
+            {#each singleGpuTiers as t (t.name)}<option value={t.name}>{t["pretty name"]}</option>{/each}
+          </select>
+          <button disabled={!canApplyHardware} onclick={() => requestConfirm("hardware")}>Apply</button>
+        </div>
       </div>
 
       <div class="control-row buttons-row">
-        <button class="danger" disabled={!canPause || pauseStartBusy} onclick={() => requestConfirm("pause")}>Pause</button>
-        <button class="primary" disabled={!canStart || pauseStartBusy} onclick={() => requestConfirm("start")}>Start</button>
+        <div class="buttons-left">
+          <button class="danger" disabled={!canPause || pauseStartBusy} onclick={() => requestConfirm("pause")}>Pause</button>
+          <button class="primary" disabled={!canStart || pauseStartBusy} onclick={() => requestConfirm("start")}>Start</button>
+        </div>
+        <button type="button" class="pill accent pricing-pill" onclick={() => (pricingOpen = true)}>GPU pricing</button>
       </div>
 
       {#if pauseStartError}
         <p class="pill danger">{pauseStartError}</p>
       {/if}
-
-      <div class="control-footer">
-        <button type="button" class="pill accent pricing-pill" onclick={() => (pricingOpen = true)}>GPU pricing</button>
-      </div>
+      {#if hardwareApplyError}
+        <p class="pill danger">{hardwareApplyError}</p>
+      {/if}
     </div>
-
-    <p class="muted" style="font-size:11px; margin: 6px 0 0">
-      Instance size selector above is still a design preview -- not wired to the backend yet.
-      Status track and Pause/Start are live.
-    </p>
   </div>
 </div>
 
@@ -271,7 +310,7 @@
         </thead>
         <tbody>
           {#each singleGpuTiers as t (t.name)}
-            <tr class:current-tier={t.name === mockHardware}>
+            <tr class:current-tier={t.name === status?.hardware}>
               <td class="mono">{t.name}</td>
               <td>{t["pretty name"]}</td>
               <td>{t.cpu}</td>
@@ -314,6 +353,19 @@
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
       <button onclick={() => (confirmAction = null)}>Cancel</button>
       <button class="primary" onclick={proceedConfirm}>Start</button>
+    </div>
+  </Modal>
+{:else if confirmAction === "hardware"}
+  <Modal onclose={() => (confirmAction = null)}>
+    <h2 style="margin-bottom:8px">Change instance size?</h2>
+    <p>
+      This restarts the Space on <strong>{singleGpuTiers.find((t) => t.name === selectedHardware)?.["pretty name"] ?? selectedHardware}</strong>.
+      Any in-progress build will be interrupted, and the Space's local disk cache (downloaded
+      source weights) will be cleared -- see <code>docs/v0.2.0/hf-space-sleep-clears-cache.md</code>.
+    </p>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+      <button onclick={() => (confirmAction = null)}>Cancel</button>
+      <button class="primary" onclick={proceedConfirm}>Apply</button>
     </div>
   </Modal>
 {/if}
@@ -363,10 +415,6 @@
     </div>
   </div>
 </div>
-
-<p style="margin-top:24px">
-  <button type="button" class="link-button" onclick={openCardPreview}>Preview HF model card template →</button>
-</p>
 
 {#if cardPreviewOpen}
   <Modal wide onclose={() => (cardPreviewOpen = false)}>
@@ -428,7 +476,9 @@
   }
 
   .log-window {
-    height: 1200px;
+    height: clamp(300px, 60vh, 800px);
+    /* height: min(300px, 20vh);
+    height: max(600px, 40vh); */
     overflow-y: auto;
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -609,18 +659,19 @@
     min-width: 200px;
   }
 
-  .buttons-row {
-    justify-content: flex-start;
+  .hardware-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .buttons-left {
+    display: flex;
     gap: 10px;
   }
 
-  .buttons-row button {
+  .buttons-left button {
     min-width: 100px;
-  }
-
-  .control-footer {
-    display: flex;
-    justify-content: flex-end;
   }
 
   .pricing-pill {

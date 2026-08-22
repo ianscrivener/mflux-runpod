@@ -26,13 +26,7 @@ uv tool install --upgrade mflux
 
 **Generate an image using {model_src} {model_quant}:**
 ```
-{mflux_cli} \
-  --prompt "A puffin standing on a cliff" \
-  --width 1280 \
-  --height 500 \
-  --seed 42 \
-  --steps {model_steps} \
-  -q {model_quant_integer}
+{command}
 ```
 
 

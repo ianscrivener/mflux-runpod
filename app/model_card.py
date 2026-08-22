@@ -19,6 +19,51 @@ QUANTS = ["bf16", "q8", "q6", "q5", "q4", "q3"]
 # catalog yet -- hardcoded until that's tracked somewhere real.
 DEFAULT_MODEL_STEPS = 9
 
+# mflux CLI quirks not expressible from model_cli_generate_command alone --
+# confirmed live 2026-08-22 against the installed mflux CLI's own argparse
+# defaults (`mflux-generate-fibo --help`, and reading
+# mflux.models.fibo.cli.fibo_generate/fibo_edit's build_parser() source):
+# mflux-generate-fibo defaults --model to "fibo", so Fibo-lite's example
+# command silently built plain FIBO instead of FIBO-lite without an explicit
+# --model flag. Likewise mflux-generate-fibo-edit defaults --model to
+# "fibo-edit", so Fibo-Edit-RMBG needs it spelled out too. And FIBO Edit's
+# get_json_prompt_for_edit() raises ValueError outright when given a plain
+# (non-JSON) prompt with no --image-path -- exactly what the sample prompt
+# below is -- so every FIBO Edit variant needs a placeholder image path or
+# the example command as shown would just crash. Keyed by configs/models/*.yaml
+# stem; only the models where the CLI's own default silently diverges from
+# what the config actually builds need an entry here.
+_CLI_QUIRKS = {
+    "Fibo-lite": {"extra_args": "--model fibo-lite"},
+    "Fibo-Edit": {"requires_image": True},
+    "Fibo-Edit-RMBG": {"extra_args": "--model fibo-edit-rmbg", "requires_image": True},
+}
+
+
+def _build_command(stem: str, cli: str, quant: str, steps: int) -> str:
+    """Full multi-line `mflux-generate-... \\` usage example for one
+    (stem, quant) pair -- computed here rather than left to the template's
+    plain str.format() so bf16's -q flag can be omitted entirely (mflux's
+    -q takes a quant bit-depth; bf16 is full precision and has none) instead
+    of rendering as a bare, valueless `-q ` (previously str.format()'s only
+    option, since it has no conditional syntax)."""
+    quirks = _CLI_QUIRKS.get(stem, {})
+    lines = [cli]
+    if quirks.get("extra_args"):
+        lines.append(quirks["extra_args"])
+    if quirks.get("requires_image"):
+        lines.append("--image-path /path/to/your/image.png")
+    lines += [
+        '--prompt "A puffin standing on a cliff"',
+        "--width 1280",
+        "--height 500",
+        "--seed 42",
+        f"--steps {steps}",
+    ]
+    if quant.lower().startswith("q"):
+        lines.append(f"-q {quant[1:]}")
+    return " \\\n  ".join(lines)
+
 
 def _mflux_version() -> str:
     try:
@@ -49,6 +94,8 @@ def render_model_card(stem: str, quant: str) -> str:
     this_repo_id = expected_repo_ids[quant]
     this_published = published_by_name.get(this_repo_id)
 
+    cli = config.get("model_cli_generate_command") or "mflux-generate"
+
     fields = {
         "model_name": (config.get("collection") or {}).get("name", stem),
         "model_quant": quant.upper(),
@@ -56,18 +103,14 @@ def render_model_card(stem: str, quant: str) -> str:
         "model_src_url": f"https://huggingface.co/{src_repo}",
         "conversion_mflux_ver": _mflux_version(),
         "conversion_date": (this_published or {}).get("upload_date") or date.today().isoformat(),
-        "mflux_cli": config.get("model_cli_generate_command") or "mflux-generate",
-        "model_steps": DEFAULT_MODEL_STEPS,
-        # mflux's -q flag takes the quant bit-depth (3/4/5/6/8); bf16 is full
-        # precision and takes no -q flag at all, so there's no integer to put
-        # here -- left blank rather than a fabricated number.
-        "model_quant_integer": quant[1:] if quant.lower().startswith("q") else "",
+        "command": _build_command(stem, cli, quant, DEFAULT_MODEL_STEPS),
     }
 
     for q in QUANTS:
         repo_id = expected_repo_ids.get(q)
         entry = published_by_name.get(repo_id) if repo_id else None
-        fields[f"{q}_gb"] = f"{entry['size_gb']:.2f}" if entry else "—"
+        size_gb = entry.get("size_gb") if entry else None
+        fields[f"{q}_gb"] = f"{size_gb:.2f}" if size_gb is not None else "—"
         fields[f"{q}_url"] = f"https://huggingface.co/{repo_id}" if entry else "—"
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")

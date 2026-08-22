@@ -588,6 +588,25 @@ def gpu_start():
         raise HTTPException(status_code=502, detail=f"start failed: {exc}") from exc
 
 
+class GpuHardwareRequest(BaseModel):
+    hardware: str
+
+
+@app.post("/gpu/hardware", summary="Change the GPU worker's HF Space hardware tier (restarts the Space)")
+def gpu_set_hardware(req: GpuHardwareRequest):
+    from app.generate import DispatchConfigError, InvalidHardwareError, set_worker_hardware
+    import httpx
+
+    try:
+        return set_worker_hardware(req.hardware)
+    except InvalidHardwareError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DispatchConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"setting hardware failed: {exc}") from exc
+
+
 @app.get("/gpu/logs/build", summary="GPU worker Space's container build logs")
 def gpu_logs_build():
     from app.generate import DispatchConfigError, fetch_worker_logs
