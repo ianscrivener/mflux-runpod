@@ -6,6 +6,24 @@ label := "com.ianscrivener.mflux-orchestrator"
 plist := env_var('HOME') + "/Library/LaunchAgents/com.ianscrivener.mflux-orchestrator.plist"
 root := justfile_directory()
 
+
+# regenerate GitNexus index -- prefers the repo-local runner (auto-selects
+# an available backend) when present, falling back to npx only if it isn't.
+# The npx fallback crashes on npm 11 (see AGENTS.md/CLAUDE.md's gitnexus
+# block); `npm i -g gitnexus` is the documented workaround there.
+gitnexus:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f .gitnexus/run.cjs ]; then
+        node .gitnexus/run.cjs analyze
+    else
+        npx gitnexus analyze
+    fi
+
+# rebuild svelte front end
+svelte:
+    cd webapp && npm run build
+
 # Run the fast unit test suite (mocked, no live network calls)
 test:
     .venv/bin/pytest tests/ -q

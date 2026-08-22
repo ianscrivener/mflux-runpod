@@ -1,7 +1,7 @@
 import json
 
 import app.models_hf as models_hf_module
-from app.models_hf import load_models_hf, write_models_hf
+from app.models_hf import is_actually_published, load_models_hf, write_models_hf
 
 
 def test_load_models_hf_missing_file_returns_empty(tmp_path):
@@ -57,3 +57,23 @@ def test_default_data_path_resolved_at_call_time(tmp_path, monkeypatch):
 
     assert target.exists()
     assert load_models_hf() == manifest
+
+
+def test_is_actually_published_just_below_threshold_is_not_published():
+    """0.049 < MIN_PUBLISHED_SIZE_GB (0.05) -- a genuinely-broken stub repo.
+    Regression guard: _model_entry() used to round size_gb to 2 decimals
+    before storing it, and round(0.049, 2) == 0.05, which would incorrectly
+    pass this predicate."""
+    assert is_actually_published({"size_gb": 0.049}) is False
+
+
+def test_is_actually_published_at_threshold_is_published():
+    assert is_actually_published({"size_gb": 0.05}) is True
+
+
+def test_is_actually_published_none_size_gb_is_published():
+    """Missing/None size_gb (common in hand-written fixtures, never the real
+    scanner's output) is treated as unknown-but-trusted, not as evidence of
+    a broken repo."""
+    assert is_actually_published({"size_gb": None}) is True
+    assert is_actually_published({}) is True

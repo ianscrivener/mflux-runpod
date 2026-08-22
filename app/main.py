@@ -562,30 +562,50 @@ def gpu_status():
         raise HTTPException(status_code=502, detail=f"worker unreachable: {exc}") from exc
 
 
+def _gpu_hf_error_exception(action: str, exc: Exception) -> HTTPException:
+    """Shared error mapping for every /gpu/* route that calls out to the HF
+    Spaces API (pause/start/set-hardware/fetch-logs, below). httpx.HTTPError
+    (worker/Space unreachable, or a real HF API error) -> 502. HFValidationError
+    (a plain ValueError, raised client-side -- e.g. a malformed HF_SPACE_ID)
+    and OfflineModeIsEnabled (an OSError, raised when HF_HUB_OFFLINE=1) both
+    -> 503, same bucket as DispatchConfigError since both are deployment
+    misconfiguration, not a bad request. Confirmed live 2026-08-22: neither
+    subclasses httpx.HTTPError, so before this they escaped every route below
+    as an unhandled 500 instead of the clean error response every other
+    failure mode here already gets."""
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
+
+    if isinstance(exc, (HFValidationError, OfflineModeIsEnabled)):
+        return HTTPException(status_code=503, detail=f"{action} failed: HF Spaces API misconfigured -- {exc}")
+    return HTTPException(status_code=502, detail=f"{action} failed: {exc}")
+
+
 @app.post("/gpu/pause", summary="Pause the GPU worker's HF Space")
 def gpu_pause():
     from app.generate import DispatchConfigError, pause_worker
     import httpx
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
     try:
         return pause_worker()
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"pause failed: {exc}") from exc
+    except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled) as exc:
+        raise _gpu_hf_error_exception("pause", exc) from exc
 
 
 @app.post("/gpu/start", summary="Restart/resume the GPU worker's HF Space")
 def gpu_start():
     from app.generate import DispatchConfigError, start_worker
     import httpx
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
     try:
         return start_worker()
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"start failed: {exc}") from exc
+    except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled) as exc:
+        raise _gpu_hf_error_exception("start", exc) from exc
 
 
 class GpuHardwareRequest(BaseModel):
@@ -596,6 +616,7 @@ class GpuHardwareRequest(BaseModel):
 def gpu_set_hardware(req: GpuHardwareRequest):
     from app.generate import DispatchConfigError, InvalidHardwareError, set_worker_hardware
     import httpx
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
     try:
         return set_worker_hardware(req.hardware)
@@ -603,34 +624,36 @@ def gpu_set_hardware(req: GpuHardwareRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"setting hardware failed: {exc}") from exc
+    except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled) as exc:
+        raise _gpu_hf_error_exception("setting hardware", exc) from exc
 
 
 @app.get("/gpu/logs/build", summary="GPU worker Space's container build logs")
 def gpu_logs_build():
     from app.generate import DispatchConfigError, fetch_worker_logs
     import httpx
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
     try:
         return fetch_worker_logs(build=True)
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"fetching build logs failed: {exc}") from exc
+    except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled) as exc:
+        raise _gpu_hf_error_exception("fetching build logs", exc) from exc
 
 
 @app.get("/gpu/logs/container", summary="GPU worker Space's running-container stdout/stderr")
 def gpu_logs_container():
     from app.generate import DispatchConfigError, fetch_worker_logs
     import httpx
+    from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
     try:
         return fetch_worker_logs(build=False)
     except DispatchConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"fetching container logs failed: {exc}") from exc
+    except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled) as exc:
+        raise _gpu_hf_error_exception("fetching container logs", exc) from exc
 
 
 @app.get("/gpu/hardware", summary="HF Spaces hardware tiers: specs + pricing (data-hf-sync/hf_hardware.json)")

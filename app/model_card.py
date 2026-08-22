@@ -21,22 +21,36 @@ DEFAULT_MODEL_STEPS = 9
 
 # mflux CLI quirks not expressible from model_cli_generate_command alone --
 # confirmed live 2026-08-22 against the installed mflux CLI's own argparse
-# defaults (`mflux-generate-fibo --help`, and reading
-# mflux.models.fibo.cli.fibo_generate/fibo_edit's build_parser() source):
-# mflux-generate-fibo defaults --model to "fibo", so Fibo-lite's example
-# command silently built plain FIBO instead of FIBO-lite without an explicit
-# --model flag. Likewise mflux-generate-fibo-edit defaults --model to
-# "fibo-edit", so Fibo-Edit-RMBG needs it spelled out too. And FIBO Edit's
-# get_json_prompt_for_edit() raises ValueError outright when given a plain
-# (non-JSON) prompt with no --image-path -- exactly what the sample prompt
-# below is -- so every FIBO Edit variant needs a placeholder image path or
-# the example command as shown would just crash. Keyed by configs/models/*.yaml
+# defaults/parser definitions (`mflux-generate-* --help`, and reading each
+# CLI module's build_parser()/main() source). Keyed by configs/models/*.yaml
 # stem; only the models where the CLI's own default silently diverges from
-# what the config actually builds need an entry here.
+# what the config actually builds, or where a flag is outright required,
+# need an entry here.
+#
+# - mflux-generate-fibo defaults --model to "fibo", so Fibo-lite's example
+#   command silently built plain FIBO instead of FIBO-lite without an
+#   explicit --model flag. Likewise mflux-generate-fibo-edit defaults
+#   --model to "fibo-edit", so Fibo-Edit-RMBG needs it spelled out too.
+# - FIBO Edit's get_json_prompt_for_edit() raises ValueError outright when
+#   given a plain (non-JSON) prompt with no --image-path -- exactly what the
+#   sample prompt below is -- so every FIBO Edit variant's example would
+#   just crash without one.
+# - mflux-generate-controlnet's build_parser() calls add_model_arguments
+#   (require_model_arg=True) -- --model is a hard argparse requirement here,
+#   not just a default; omitting it fails before generation even starts.
+#   Both ControlNet-Canny configs share this one CLI script (base model
+#   picked via --model), so both need it spelled out. --controlnet-image-path
+#   isn't argparse-required, but a controlnet run without one just ignores
+#   the whole point of the tool, so it's included for a useful example too.
+# - mflux-generate-depth's --depth-image-path isn't required either (defaults
+#   to None, no crash), included for the same reason.
 _CLI_QUIRKS = {
     "Fibo-lite": {"extra_args": "--model fibo-lite"},
-    "Fibo-Edit": {"requires_image": True},
-    "Fibo-Edit-RMBG": {"extra_args": "--model fibo-edit-rmbg", "requires_image": True},
+    "Fibo-Edit": {"image_flag": "--image-path"},
+    "Fibo-Edit-RMBG": {"extra_args": "--model fibo-edit-rmbg", "image_flag": "--image-path"},
+    "Flux.1-Dev-ControlNet-Canny": {"extra_args": "--model dev-controlnet-canny", "image_flag": "--controlnet-image-path"},
+    "Flux.1-Schnell-ControlNet-Canny": {"extra_args": "--model schnell-controlnet-canny", "image_flag": "--controlnet-image-path"},
+    "Flux.1-Dev-Depth": {"image_flag": "--depth-image-path"},
 }
 
 
@@ -51,8 +65,8 @@ def _build_command(stem: str, cli: str, quant: str, steps: int) -> str:
     lines = [cli]
     if quirks.get("extra_args"):
         lines.append(quirks["extra_args"])
-    if quirks.get("requires_image"):
-        lines.append("--image-path /path/to/your/image.png")
+    if quirks.get("image_flag"):
+        lines.append(f"{quirks['image_flag']} /path/to/your/image.png")
     lines += [
         '--prompt "A puffin standing on a cliff"',
         "--width 1280",

@@ -255,12 +255,23 @@ def worker_status() -> dict:
     hardware = None
     if hf_token:
         from huggingface_hub import HfApi
+        from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
 
         try:
             runtime = HfApi(token=hf_token).get_space_runtime(_space_id())
             stage = runtime.stage
             hardware = runtime.hardware
-        except httpx.HTTPError:
+        except (httpx.HTTPError, HFValidationError, OfflineModeIsEnabled):
+            # Best-effort lookup (see docstring) -- HFValidationError is a
+            # plain ValueError, not an httpx.HTTPError, and fires client-side
+            # (no request sent at all) for a malformed HF_SPACE_ID (confirmed
+            # live 2026-08-22: get_space_runtime("org/repo/bad slash") raises
+            # it before touching the network). OfflineModeIsEnabled is an
+            # OSError, not httpx.HTTPError either, and fires the same way
+            # when HF_HUB_OFFLINE=1 is set. Neither was caught by the old
+            # httpx.HTTPError-only except, so either would have crashed this
+            # whole best-effort lookup instead of falling through to the
+            # plain /status call below.
             pass
 
     if stage in _SPACE_NOT_SERVING_STAGES:

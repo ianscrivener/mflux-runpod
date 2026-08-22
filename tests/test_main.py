@@ -20,6 +20,24 @@ def client():
         yield c
 
 
+@pytest.fixture
+def stub_fibo_for_report_tests(monkeypatch):
+    """Mock load_configs and load_models_hf for report callback tests."""
+    monkeypatch.setattr(
+        "app.generate.load_configs",
+        lambda: {
+            "Fibo": {
+                "model_object": "FIBO",
+                "model_config": "fibo",
+                "hf_model_name": "briaai/FIBO",
+                "quants": ["q4", "q6", "q8", "bf16"],
+                "collection": {"name": "Fibo", "description": "MFlux quantized builds of Fibo", "version": "1.0.0"},
+            }
+        },
+    )
+    monkeypatch.setattr("app.generate.load_models_hf", lambda: {"hf_models": []})
+
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
@@ -53,7 +71,7 @@ def test_generate_known_model_dry_runs(client):
 
 
 
-def test_report_run_callback_one_quant_of_many_is_partial(client):
+def test_report_run_callback_one_quant_of_many_is_partial(client, stub_fibo_for_report_tests):
     """Fibo has 4 missing quants -> expected_quants=4. One quant job
     reporting in should leave the run 'partial', not flip it to 'success' —
     this is the one-job-per-quant contract, not the old one-job-per-run
@@ -86,7 +104,7 @@ def test_report_run_callback_one_quant_of_many_is_partial(client):
     assert body["quant_builds"][0]["hf_repo_id"] == "mflux-community/fibo-mflux-q4"
 
 
-def test_report_run_callback_all_quants_reported_is_success(client):
+def test_report_run_callback_all_quants_reported_is_success(client, stub_fibo_for_report_tests):
     gen_resp = client.post("/generate", json={"config_stem": "Fibo"})
     run_id = gen_resp.json()["run_id"]
     quants = gen_resp.json()["plan"]["quants_to_build"]
@@ -106,7 +124,7 @@ def test_report_run_callback_all_quants_reported_is_success(client):
     assert resp.json()["status"] == "success"
 
 
-def test_report_run_callback_any_failure_marks_run_failed(client):
+def test_report_run_callback_any_failure_marks_run_failed(client, stub_fibo_for_report_tests):
     gen_resp = client.post("/generate", json={"config_stem": "Fibo"})
     run_id = gen_resp.json()["run_id"]
     quants = gen_resp.json()["plan"]["quants_to_build"]

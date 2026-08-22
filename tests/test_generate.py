@@ -30,6 +30,24 @@ def stub_models_hf(monkeypatch, tmp_path):
     monkeypatch.setattr("app.generate.load_models_hf", lambda: {"hf_models": []})
 
 
+FAKE_FIBO_CONFIG = {
+    "model_object": "FIBO",
+    "model_config": "fibo",
+    "hf_model_name": "briaai/FIBO",
+    "quants": ["q4", "q6", "q8", "bf16"],
+    "collection": {"name": "Fibo", "description": "MFlux quantized builds of Fibo", "version": "1.0.0"},
+}
+
+
+@pytest.fixture(autouse=True)
+def stub_fibo_config(monkeypatch):
+    """Mock load_configs to return a fake Fibo config with 4 quants."""
+    monkeypatch.setattr(
+        "app.generate.load_configs",
+        lambda: {"Fibo": FAKE_FIBO_CONFIG},
+    )
+
+
 def test_resolve_generate_config_unknown_model():
     with pytest.raises(UnknownModelError):
         resolve_generate_config("Not-A-Real-Model")

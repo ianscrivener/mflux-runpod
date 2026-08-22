@@ -505,7 +505,7 @@
         <table class="detail-table">
           <tbody>
             <tr><td class="muted">Published repo</td><td class="mono">{quantDetail.published.model_name}</td></tr>
-            <tr><td class="muted">Published size</td><td>{quantDetail.published.size_gb ?? "—"} GB</td></tr>
+            <tr><td class="muted">Published size</td><td>{quantDetail.published.size_gb != null ? quantDetail.published.size_gb.toFixed(2) : "—"} GB</td></tr>
             <tr><td class="muted">Upload date</td><td>{quantDetail.published.upload_date ?? "—"}</td></tr>
             <tr><td class="muted">Uploaded by</td><td>{quantDetail.published.upload_user ?? "—"}</td></tr>
             <tr><td class="muted">Commit</td><td class="mono">{quantDetail.published.commit_hash ?? "—"}</td></tr>

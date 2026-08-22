@@ -68,7 +68,14 @@ def _model_entry(api, model_id: str) -> dict:
     info = api.model_info(model_id, files_metadata=True)
     return {
         "model_name": model_id,
-        "size_gb": round(_model_size_bytes(info) / 1_000_000_000, 2),
+        # Unrounded -- is_actually_published() compares this against
+        # MIN_PUBLISHED_SIZE_GB (0.05), and rounding first can push a
+        # genuinely-broken stub repo's raw size (e.g. 0.049 GB) up across
+        # that boundary (round(0.049, 2) == 0.05, which then passes
+        # `>= 0.05`). Display sites round to 2dp themselves at render time
+        # (app.model_card's f"{size_gb:.2f}", ModelsView.svelte's
+        # .toFixed(2)) instead.
+        "size_gb": _model_size_bytes(info) / 1_000_000_000,
         "upload_date": info.created_at.date().isoformat() if info.created_at else None,
         "upload_user": info.author,
         "commit_hash": info.sha,

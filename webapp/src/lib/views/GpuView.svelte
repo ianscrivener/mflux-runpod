@@ -273,7 +273,7 @@
           </div>
         </div>
         <div class="hardware-controls">
-          <select bind:value={selectedHardware}>
+          <select bind:value={selectedHardware} aria-label="Instance size">
             {#each singleGpuTiers as t (t.name)}<option value={t.name}>{t["pretty name"]}</option>{/each}
           </select>
           <button disabled={!canApplyHardware} onclick={() => requestConfirm("hardware")}>Apply</button>
